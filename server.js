@@ -5,8 +5,6 @@ import { morganLogger } from "./middlewares/morganLogger.js";
 import { badPathHandler } from "./middlewares/badPathHandler.js";
 import { ErrorHandler } from "./middlewares/errorHandler.js";
 import { conn } from "./services/db.services.js";
-import User from "./users/models/User.schema.js";
-import usersSeed from "./users/initialData/initialUsers.json" with { type: "json" };
 import cors from "cors";
 import path from "path";
 import dotenv from "dotenv";
@@ -53,17 +51,4 @@ app.get("/api/test", (req, res) => {
 app.listen(PORT, async () => {
   console.log(chalk.blue(`🚀 Server is running on port ${PORT}`));
   await conn();
-
-  try {
-    const usersFromDb = await User.find();
-
-    usersSeed.forEach(async (user) => {
-      if (!usersFromDb.find((dbUser) => dbUser.email === user.email)) {
-        const newUser = new User(user);
-        await newUser.save();
-      }
-    });
-  } catch (err) {
-    console.error("❌ Failed to seed users:", err);
-  }
 });
