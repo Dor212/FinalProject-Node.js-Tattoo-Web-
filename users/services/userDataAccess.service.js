@@ -62,9 +62,11 @@ const getUserById = async (userId) => {
     const returnUser = pick(user, ["name", "isAdmin", "phone", "email"]);
     return returnUser;
   } catch (err) {
-    throw new Error(err.massage);
+    throw new Error(err.message);
   }
 };
+
+
 
 const deleteUser = async (userId) => {
   try {

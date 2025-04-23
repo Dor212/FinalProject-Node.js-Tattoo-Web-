@@ -14,6 +14,7 @@ const generateToken = (user) => {
 const verifyToken = (tokenFromClient) => {
   try {
     const userData = jwt.verify(tokenFromClient, SECRET_KEY);
+    console.log("🔐 SECRET_KEY Loaded:", SECRET_KEY);
     return userData;
   } catch (err) {
     return null;

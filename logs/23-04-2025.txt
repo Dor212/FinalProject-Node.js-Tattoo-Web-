@@ -1,0 +1,91 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+23-04-2025 | 15:16:52 | GET | /users/6804cac1fa86defaadd8aa1e | 500 | 1.490ms
+23-04-2025 | 15:29:43 | GET | /users/6804cac1fa86defaadd8aa1e | 500 | 12.940ms
+23-04-2025 | 15:29:43 | GET | /users/6804cac1fa86defaadd8aa1e | 500 | 13.594ms
+23-04-2025 | 15:29:43 | GET | /users/6804cac1fa86defaadd8aa1e | 500 | 10.608ms
+23-04-2025 | 15:29:43 | GET | /users/6804cac1fa86defaadd8aa1e | 500 | 4.222ms
+
+23-04-2025 | 15:30:28 | GET | /users/6804cac1fa86defaadd8aa1e | 500 | 3.298ms
+23-04-2025 | 15:35:54 | GET | /users/6804cac1fa86defaadd8aa1e | 500 | 8.527ms
+23-04-2025 | 15:35:54 | GET | /users/6804cac1fa86defaadd8aa1e | 500 | 10.214ms
+23-04-2025 | 15:35:54 | GET | /users/6804cac1fa86defaadd8aa1e | 500 | 2.956ms
+23-04-2025 | 15:35:54 | GET | /users/6804cac1fa86defaadd8aa1e | 500 | 3.373ms
+
+23-04-2025 | 15:36:14 | GET | /users/6804cac1fa86defaadd8aa1e | 500 | 1.736ms
+23-04-2025 | 15:38:08 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 47.767ms
+23-04-2025 | 15:38:08 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 10.115ms
+23-04-2025 | 15:38:08 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 9.995ms
+23-04-2025 | 15:38:08 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 21.533ms
+
+23-04-2025 | 15:38:19 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 4.053ms
+23-04-2025 | 15:41:45 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 8.696ms
+23-04-2025 | 15:41:45 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 11.459ms
+23-04-2025 | 15:41:45 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 14.300ms
+23-04-2025 | 15:41:45 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 18.760ms
+
+
+
+
+
+23-04-2025 | 15:45:18 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 8.279ms
+23-04-2025 | 15:47:04 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 20.842ms
+23-04-2025 | 15:47:04 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 9.877ms
+23-04-2025 | 15:47:04 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 9.986ms
+23-04-2025 | 15:47:04 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 11.856ms
+
+23-04-2025 | 15:47:17 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 2.903ms
+23-04-2025 | 15:50:37 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 19.000ms
+23-04-2025 | 15:50:37 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 4.146ms
+23-04-2025 | 15:50:37 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 4.372ms
+23-04-2025 | 15:50:37 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 8.915ms
+
+23-04-2025 | 15:50:49 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 2.311ms
+23-04-2025 | 15:53:51 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 17.116ms
+23-04-2025 | 15:53:51 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 5.410ms
+23-04-2025 | 15:53:51 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 3.563ms
+23-04-2025 | 15:53:51 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 6.729ms
+
+23-04-2025 | 15:54:12 | GET | /users/6804cac1fa86defaadd8aa1e | 400 | 8.331ms
+
+
+
+
+23-04-2025 | 15:56:22 | POST | /users/login | 401 | 117.473ms
+
+
+23-04-2025 | 16:12:31 | GET | /users/6804cac1fa86defaadd8aa1e | 401 | 4.718ms
+
+
+
+

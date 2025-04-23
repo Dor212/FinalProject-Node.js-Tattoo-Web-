@@ -19,6 +19,7 @@ import { dirname } from "path";
 import fs from "fs";
 import nodemailer from "nodemailer";
 import multer from "multer";
+import bcrypt from "bcryptjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -65,16 +66,19 @@ router.post("/login", validation(LoginSchema), async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    
-    const user = await login(email, password);
+    const user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).send("User not found!");
+      return res.status(401).json({ error: "Invalid email or password" });
     }
 
-    console.log("USER TO TOKEN:", user); 
+    const isPasswordMatch = await bcrypt.compare(password, user.password);
+    if (!isPasswordMatch) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+
     const token = generateToken(user);
 
-    return res.send(token);
+    res.json({ token });
   } catch (err) {
     return res.status(500).send(err.message);
   }
@@ -89,7 +93,7 @@ router.get("/", auth, isAdmin, async (req, res) => {
   }
 });
 
-router.get("/:id", isAdmin, async (req, res) => {
+router.get("/:id", auth, async (req, res) => {
   try {
     const user = await getUserById(req.params.id);
     return res.json(user);
