@@ -3,7 +3,6 @@ import usersRouter from "../users/routes/user.routes.js";
 import galleryRouter from "../gallery/routes/gallery.routes.js"
 import { auth } from "../middlewares/token.js";
 import { isAdmin } from "../middlewares/isAdmin.js";
-import { upload } from "../middlewares/upload.js";
 import productRouter from "../products/routes/product.routes.js";
 import path from "path";
 
@@ -24,13 +23,6 @@ router.get("/logs/:date", auth, isAdmin, (req, res) => {
   }
 });
 
-router.post("/upload", auth, upload, async (req, res) => {
-  try {
-    return res.json({ message: "File uploaded", file: req.filename });
-  } catch (error) {
-    return res.status(500).json({ message: error.message });
-  }
-});
 
 //  ראוטים עיקריים
 router.use("/users", usersRouter);
