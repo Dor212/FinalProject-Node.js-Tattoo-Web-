@@ -1,0 +1,23 @@
+14-04-2025 | 13:41:00 | GET | /sketches/sketch1.png | 404 | 5.460ms
+14-04-2025 | 13:41:00 | GET | /sketches/sketch2.png | 404 | 15.745ms
+14-04-2025 | 13:41:00 | GET | /sketches/sketch3.png | 404 | 21.961ms
+14-04-2025 | 13:41:30 | GET | /sketches/sketch1.png | 404 | 2.415ms
+14-04-2025 | 13:41:30 | GET | /sketches/sketch2.png | 404 | 6.572ms
+14-04-2025 | 13:41:30 | GET | /sketches/sketch3.png | 404 | 8.430ms
+14-04-2025 | 14:57:44 | POST | /api/send-image | 404 | 1.041ms
+14-04-2025 | 14:59:33 | POST | /send-image | 404 | 1.050ms
+14-04-2025 | 15:01:16 | POST | /sendimage | 404 | 1.857ms
+14-04-2025 | 15:02:31 | POST | /send-image | 404 | 2.955ms
+14-04-2025 | 15:06:40 | POST | /api/users/send-image | 404 | 0.605ms
+14-04-2025 | 15:18:00 | POST | /api/users/send-image | 500 | 1192.719ms
+14-04-2025 | 15:21:37 | POST | /api/users/send-image | 500 | 1105.516ms
+14-04-2025 | 15:23:07 | POST | /users/send-image | 500 | 1082.606ms
+14-04-2025 | 15:40:45 | POST | /users/send-image | 500 | 8.418ms
+14-04-2025 | 15:44:22 | POST | /users/send-image | 500 | 5.293ms
+14-04-2025 | 15:46:50 | POST | /users/send-image | 500 | 5.787ms
+14-04-2025 | 15:48:26 | POST | /users/send-image | 500 | 663.783ms
+
+
+
+
+
