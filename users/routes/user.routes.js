@@ -113,6 +113,7 @@ router.delete("/:id", auth, isAdmin, async (req, res) => {
 });
 
 
+
 router.post("/send-image", async (req, res) => {
   try {
     const { image, name, phone } = req.body;
@@ -165,6 +166,51 @@ router.post("/send-image", async (req, res) => {
   } catch (err) {
     console.error("Error sending email:", err);
     res.status(500).json({ error: "Failed to send email" });
+  }
+});
+
+router.post("/contact", async (req, res) => {
+  const { name, email, message } = req.body;
+  try {
+    const transporter = nodemailer.createTransport({
+      service: "gmail", // או Mailtrap, SendGrid וכו'
+      auth: {
+        user: process.env.MY_EMAIL,
+        pass: process.env.MY_EMAIL_PASSWORD,
+      },
+    });
+
+    await transporter.sendMail({
+      from: `"Website Contact" <${process.env.SMTP_USER}>`,
+      to: "your-email@domain.com",
+      subject: `New message from ${name}`,
+      html: `<p><strong>From:</strong> ${name} (${email})</p><p>${message}</p>`,
+    });
+
+    res.json({ message: "Email sent" });
+  } catch (err) {
+    console.error("Error sending email:", err);
+    res.status(500).json({ error: "Email failed" });
+  }
+});
+
+router.post("/orders", async (req, res) => {
+  try {
+    const { customerDetails, cart } = req.body;
+
+    if (!customerDetails || !cart || cart.length === 0) {
+      return res.status(400).json({ error: "חסרים פרטים להזמנה" });
+    }
+
+    // אפשר לשלב כאן שמירה במסד נתונים או שליחה במייל
+    console.log("התקבלה הזמנה חדשה:");
+    console.log("פרטי לקוח:", customerDetails);
+    console.log("מוצרים שהוזמנו:", cart);
+
+    res.status(201).json({ message: "ההזמנה נקלטה בהצלחה!" });
+  } catch (err) {
+    console.error("שגיאה בקבלת הזמנה:", err);
+    res.status(500).json({ error: "שגיאה בשרת" });
   }
 });
 
