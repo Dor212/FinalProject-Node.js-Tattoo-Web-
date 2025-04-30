@@ -19,7 +19,7 @@ dotenv.config();
 // ✅ הגדרת אפליקציה
 const app = express();
 const { SERVER } = process.env;
-const PORT = SERVER || 8080;
+const PORT = process.env.PORT || 8080;
 
 // ✅ הגדרות כלליות
 app.use(cors({ origin: "*" }));
