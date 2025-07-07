@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import Product from "../models/product.schema.js";
 import { fileURLToPath } from "url";
+import { nanoid } from "nanoid";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,7 +19,9 @@ if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
 const storage = multer.diskStorage({
   destination: (_, __, cb) => cb(null, uploadPath),
   filename: (_, file, cb) => {
-    const unique = `${Date.now()}-${file.originalname.replace(/\s+/g, "_")}`;
+    const fileExt = path.extname(file.originalname); 
+    const randomName = nanoid(12); 
+    const unique = `<span class="math-inline">\{Date\.now\(\)\}\-</span>{randomName}${fileExt}`; // שם חדש: timestamp-randomstring.ext
     cb(null, unique);
   },
 });

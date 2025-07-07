@@ -55,7 +55,6 @@ const login = async (email, password) => {
 const getUserById = async (userId) => {
   try {
     const user = await User.findById(userId);
-    console.log("USER FOUND:", user);
     if (!user) {
       throw new Error("User not found");
     }
