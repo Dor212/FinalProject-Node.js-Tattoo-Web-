@@ -4,7 +4,8 @@ import path from "path";
 import fs from "fs";
 import Product from "../models/product.schema.js";
 import { fileURLToPath } from "url";
-import { nanoid } from "nanoid";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
+import { v2 as cloudinary } from "cloudinary";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,6 +16,12 @@ const router = express.Router();
 const uploadPath = path.join(__dirname, "../../public/merchendise");
 
 if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 const storage = new CloudinaryStorage({
   cloudinary,
