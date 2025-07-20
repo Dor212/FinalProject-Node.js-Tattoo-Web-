@@ -10,6 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
+const upload = multer({ storage });
 
 // שינוי הנתיב לתוך תקיית merchendise
 const uploadPath = path.join(__dirname, "../../public/merchendise");
@@ -26,7 +27,6 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
 
 // 🔽 GET – כל המוצרים
 router.get("/", async (req, res) => {
@@ -43,12 +43,13 @@ router.post("/upload", upload.single("image"), async (req, res) => {
   try {
     const { title, price, stockSmall, stockMedium, stockLarge } = req.body;
 
-    if (!req.file) return res.status(400).json({ error: "Image required" });
+    if (!req.file || !req.file.path)
+      return res.status(400).json({ error: "Image upload failed" });
 
     const newProduct = new Product({
       title,
       price,
-      imageUrl: `/uploads/merchendise/${req.file.filename}`,
+      imageUrl: req.file.path, // קישור ישיר לתמונה בענן
       stock: {
         small: parseInt(stockSmall) || 0,
         medium: parseInt(stockMedium) || 0,
@@ -59,6 +60,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     await newProduct.save();
     res.status(201).json(newProduct);
   } catch (err) {
+    console.error("Upload error:", err);
     res.status(500).json({ error: "Failed to upload product" });
   }
 });
