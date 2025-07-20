@@ -60,10 +60,11 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     await newProduct.save();
     res.status(201).json(newProduct);
   } catch (err) {
-    console.error("❌ SERVER ERROR:", err); // מדפיס שגיאה אמיתית
-    res
-      .status(500)
-      .json({ error: "Failed to upload product", details: err.message });
+    console.error("❌ SERVER ERROR:", JSON.stringify(err, null, 2)); // נסה להדפיס את כל האובייקט
+    res.status(500).json({
+      error: "Failed to upload product",
+      details: err?.message || err || "Unknown error",
+    });
   }
 });
 
