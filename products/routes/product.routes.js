@@ -10,7 +10,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
-const upload = multer({ storage });
 
 // שינוי הנתיב לתוך תקיית merchendise
 const uploadPath = path.join(__dirname, "../../public/merchendise");
@@ -27,6 +26,7 @@ const storage = multer.diskStorage({
   },
 });
 
+const upload = multer({ storage });
 
 // 🔽 GET – כל המוצרים
 router.get("/", async (req, res) => {
