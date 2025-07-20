@@ -21,7 +21,7 @@ const storage = multer.diskStorage({
   filename: (_, file, cb) => {
     const fileExt = path.extname(file.originalname); 
     const randomName = nanoid(12); 
-    const unique = `<span class="math-inline">\{Date\.now\(\)\}\-</span>{randomName}${fileExt}`; // שם חדש: timestamp-randomstring.ext
+    const unique = `${Date.now()}-${randomName}${fileExt}`;
     cb(null, unique);
   },
 });
@@ -48,7 +48,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     const newProduct = new Product({
       title,
       price,
-      imageUrl: `/merchendise/${req.file.filename}`,
+      imageUrl: `/uploads/merchendise/${req.file.filename}`,
       stock: {
         small: parseInt(stockSmall) || 0,
         medium: parseInt(stockMedium) || 0,

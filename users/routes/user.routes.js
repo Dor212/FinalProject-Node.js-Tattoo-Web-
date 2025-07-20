@@ -112,8 +112,6 @@ router.delete("/:id", auth, isAdmin, async (req, res) => {
   }
 });
 
-
-
 router.post("/send-image", async (req, res) => {
   try {
     const { image, name, phone } = req.body;
@@ -201,8 +199,6 @@ router.post("/orders", async (req, res) => {
     if (!customerDetails || !cart || cart.length === 0) {
       return res.status(400).json({ error: "חסרים פרטים להזמנה" });
     }
-
-    // אפשר לשלב כאן שמירה במסד נתונים או שליחה במייל
     console.log("התקבלה הזמנה חדשה:");
     console.log("פרטי לקוח:", customerDetails);
     console.log("מוצרים שהוזמנו:", cart);
