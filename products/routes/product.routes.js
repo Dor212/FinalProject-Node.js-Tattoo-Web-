@@ -16,13 +16,12 @@ const uploadPath = path.join(__dirname, "../../public/merchendise");
 
 if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
 
-const storage = multer.diskStorage({
-  destination: (_, __, cb) => cb(null, uploadPath),
-  filename: (_, file, cb) => {
-    const fileExt = path.extname(file.originalname); 
-    const randomName = nanoid(12); 
-    const unique = `${Date.now()}-${randomName}${fileExt}`;
-    cb(null, unique);
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "omer-products",
+    allowed_formats: ["jpg", "jpeg", "png"],
+    transformation: [{ width: 800, height: 800, crop: "limit" }],
   },
 });
 
@@ -43,13 +42,14 @@ router.post("/upload", upload.single("image"), async (req, res) => {
   try {
     const { title, price, stockSmall, stockMedium, stockLarge } = req.body;
 
-    if (!req.file || !req.file.path)
+    if (!req.file || !req.file.path) {
       return res.status(400).json({ error: "Image upload failed" });
+    }
 
     const newProduct = new Product({
       title,
       price,
-      imageUrl: req.file.path, // קישור ישיר לתמונה בענן
+      imageUrl: req.file.path, // 
       stock: {
         small: parseInt(stockSmall) || 0,
         medium: parseInt(stockMedium) || 0,
@@ -60,7 +60,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     await newProduct.save();
     res.status(201).json(newProduct);
   } catch (err) {
-    console.error("Upload error:", err);
+    console.error(err);
     res.status(500).json({ error: "Failed to upload product" });
   }
 });
