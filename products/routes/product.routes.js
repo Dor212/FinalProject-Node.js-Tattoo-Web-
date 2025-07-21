@@ -42,6 +42,8 @@ router.get("/", async (req, res) => {
 // ⬆️ POST – העלאת מוצר חדש
 router.post("/upload", upload.single("image"), async (req, res) => {
   try {
+    console.log("🧾 BODY:", req.body);
+    console.log("📷 FILE:", req.file);
     const { title, price, stockSmall, stockMedium, stockLarge } = req.body;
 
     if (!req.file) return res.status(400).json({ error: "Image required" });
