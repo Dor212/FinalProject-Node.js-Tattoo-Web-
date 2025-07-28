@@ -50,11 +50,11 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     const newProduct = new Product({
       title,
       price,
-      imageUrl: req.file.path, // Cloudinary URL
+      imageUrl: req.file.path, 
       stock: {
         S: parseInt(stockSmall) || 0,
         M: parseInt(stockMedium) || 0,
-        larLge: parseInt(stockLarge) || 0,
+        L: parseInt(stockLarge) || 0,
         XL: parseInt(stockXL) || 0,
       },
     });
@@ -63,7 +63,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     res.status(201).json(newProduct);
   } catch (err) {
     console.log("❌ SERVER ERROR:");
-    console.dir(err, { depth: null }); // ✅ יציג שגיאה גם אם היא לא serializable
+    console.dir(err, { depth: null }); 
     res.status(500).json({
       error: "Failed to upload product",
       details: err?.message || "Unknown error",
