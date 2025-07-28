@@ -42,9 +42,8 @@ router.get("/", async (req, res) => {
 // ⬆️ POST – העלאת מוצר חדש
 router.post("/upload", upload.single("image"), async (req, res) => {
   try {
-    console.log("🧾 BODY:", req.body);
-    console.log("📷 FILE:", req.file);
-    const { title, price, stockSmall, stockMedium, stockLarge } = req.body;
+    const { title, price, stockSmall, stockMedium, stockLarge, stockXL } =
+      req.body;
 
     if (!req.file) return res.status(400).json({ error: "Image required" });
 
@@ -53,9 +52,10 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       price,
       imageUrl: req.file.path, // Cloudinary URL
       stock: {
-        small: parseInt(stockSmall) || 0,
-        medium: parseInt(stockMedium) || 0,
-        large: parseInt(stockLarge) || 0,
+        S: parseInt(stockSmall) || 0,
+        M: parseInt(stockMedium) || 0,
+        larLge: parseInt(stockLarge) || 0,
+        XL: parseInt(stockXL) || 0,
       },
     });
 
@@ -75,14 +75,25 @@ router.post("/upload", upload.single("image"), async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
-    if (product) {
-      const imagePath = path.join(uploadPath, path.basename(product.imageUrl));
-      if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
-      res.json({ message: "Product deleted" });
-    } else {
-      res.status(404).json({ error: "Product not found" });
+
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
     }
+
+    // הוצאת public_id מתוך imageUrl
+    const imageUrl = product.imageUrl;
+    const publicId = imageUrl
+      .split("/")
+      .slice(-2)
+      .join("/")
+      .replace(/\.[^/.]+$/, ""); // הסר סיומת
+
+    // נסה למחוק מה־Cloudinary
+    await cloudinary.uploader.destroy(publicId);
+
+    res.json({ message: "Product and image deleted from Cloudinary" });
   } catch (err) {
+    console.error("❌ DELETE ERROR:", err);
     res.status(500).json({ error: "Failed to delete product" });
   }
 });
