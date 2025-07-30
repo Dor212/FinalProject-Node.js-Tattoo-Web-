@@ -20,7 +20,7 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
   cloudinary,
   params: {
-    folder: "merchendise", // שם תיקייה ב-Cloudinary
+    folder: "merchendise", 
     allowed_formats: ["jpeg", "jpg", "png"],
     public_id: (req, file) => `${Date.now()}-${file.originalname}`,
   },
@@ -28,7 +28,7 @@ const storage = new CloudinaryStorage({
 
 const upload = multer({ storage });
 
-// 🔽 GET – כל המוצרים
+
 router.get("/", async (req, res) => {
   try {
     const products = await Product.find().sort({ createdAt: -1 });
@@ -39,7 +39,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-// ⬆️ POST – העלאת מוצר חדש
+
 router.post("/upload", upload.single("image"), async (req, res) => {
   try {
     const { title, price, stockSmall, stockMedium, stockLarge, stockXL } =
@@ -55,7 +55,6 @@ router.post("/upload", upload.single("image"), async (req, res) => {
         S: parseInt(stockSmall) || 0,
         M: parseInt(stockMedium) || 0,
         L: parseInt(stockLarge) || 0,
-        XL: parseInt(stockXL) || 0,
       },
     });
 
