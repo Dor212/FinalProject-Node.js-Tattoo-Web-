@@ -6,9 +6,18 @@ const productSchema = new mongoose.Schema(
     price: { type: Number, required: true },
     imageUrl: { type: String, required: true },
     stock: {
-      small: { type: Number, default: 0 },
-      medium: { type: Number, default: 0 },
-      large: { type: Number, default: 0 },
+      small: {
+        initial: { type: Number, default: 0 },
+        current: { type: Number, default: 0 },
+      },
+      medium: {
+        initial: { type: Number, default: 0 },
+        current: { type: Number, default: 0 },
+      },
+      large: {
+        initial: { type: Number, default: 0 },
+        current: { type: Number, default: 0 },
+      },
     },
   },
   { timestamps: true }

@@ -52,9 +52,18 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       price,
       imageUrl: req.file.path,
       stock: {
-        small: parseInt(stockSmall) || 0,
-        medium: parseInt(stockMedium) || 0,
-        large: parseInt(stockLarge) || 0,
+        small: {
+          initial: parseInt(stockSmall) || 0,
+          current: parseInt(stockSmall) || 0,
+        },
+        medium: {
+          initial: parseInt(stockMedium) || 0,
+          current: parseInt(stockMedium) || 0,
+        },
+        large: {
+          initial: parseInt(stockLarge) || 0,
+          current: parseInt(stockLarge) || 0,
+        },
       },
     });
 
@@ -69,6 +78,39 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     });
   }
 });
+//עדכון המלאי ברכישה
+router.post("/purchase", async (req, res) => {
+  const { productId, quantities } = req.body;
+
+  try {
+    const product = await Product.findById(productId);
+    if (!product) return res.status(404).json({ error: "Product not found" });
+
+
+    if (quantities.small)
+      product.stock.small.current = Math.max(
+        0,
+        product.stock.small.current - quantities.small
+      );
+    if (quantities.medium)
+      product.stock.medium.current = Math.max(
+        0,
+        product.stock.medium.current - quantities.medium
+      );
+    if (quantities.large)
+      product.stock.large.current = Math.max(
+        0,
+        product.stock.large.current - quantities.large
+      );
+
+    await product.save();
+
+    res.json({ message: "Purchase successful", product });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update stock" });
+  }
+});
+
 
 // ❌ DELETE – מחיקת מוצר
 router.delete("/:id", async (req, res) => {
