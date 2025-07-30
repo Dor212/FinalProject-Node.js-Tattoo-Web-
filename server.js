@@ -21,10 +21,20 @@ const app = express();
 const { SERVER } = process.env;
 const PORT = process.env.PORT || 8080;
 
+const allowedOrigins = [
+  "https://finalproject-client-tattooweb.onrender.com",
+  "https://localhost", 
+];
+
 // ✅ הגדרות כלליות
 app.use(
   cors({
-    origin: "https://finalproject-client-tattooweb.onrender.com",
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   })
