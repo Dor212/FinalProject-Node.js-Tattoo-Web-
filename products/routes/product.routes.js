@@ -50,11 +50,11 @@ router.post("/upload", upload.single("image"), async (req, res) => {
     const newProduct = new Product({
       title,
       price,
-      imageUrl: req.file.path, 
+      imageUrl: req.file.path,
       stock: {
-        S: parseInt(stockSmall) || 0,
-        M: parseInt(stockMedium) || 0,
-        L: parseInt(stockLarge) || 0,
+        small: parseInt(stockSmall) || 0,
+        medium: parseInt(stockMedium) || 0,
+        large: parseInt(stockLarge) || 0,
       },
     });
 
