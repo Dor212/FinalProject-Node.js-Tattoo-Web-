@@ -15,7 +15,8 @@ const productSchema = new mongoose.Schema(
     price: { type: Number, required: true },
     imageUrl: { type: String, required: true },
 
-    // אופציונלי: רק אם יש מידות
+    description: { type: String, default: "" },
+    
     stock: {
       l: { type: sizeStockSchema, required: false },
       xl: { type: sizeStockSchema, required: false },
