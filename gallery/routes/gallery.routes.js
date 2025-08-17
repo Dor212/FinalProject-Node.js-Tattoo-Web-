@@ -11,10 +11,9 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-// 🗂️ מיקום תיקיית הסקיצות בתוך public
+
 const baseGalleryPath = path.join(__dirname, "../../public/sketchesTattoo");
 
-// 🛠️ הגדרת multer להעלאת תמונות לפי קטגוריה
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const category = req.params.category;
@@ -35,7 +34,6 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// 🔽 GET /gallery/:category - מחזיר את כל הקבצים לפי קטגוריה
 router.get("/:category", (req, res) => {
   const { category } = req.params;
   const categoryPath = path.join(baseGalleryPath, category);
@@ -49,7 +47,7 @@ router.get("/:category", (req, res) => {
   res.json(urls);
 });
 
-// ⬆️ POST /gallery/upload/:category - העלאה עם עיבוד ושמירה כקובץ חדש
+
 router.post("/upload/:category", upload.single("image"), async (req, res) => {
   const { category } = req.params;
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -76,7 +74,7 @@ router.post("/upload/:category", upload.single("image"), async (req, res) => {
   }
 });
 
-// ❌ DELETE /gallery/:category/:filename - מחיקת תמונה
+
 router.delete("/:category/:filename", async (req, res) => {
   const { category, filename } = req.params;
   const filePath = path.join(baseGalleryPath, category, filename);
