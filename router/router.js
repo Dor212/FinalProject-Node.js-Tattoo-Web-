@@ -4,6 +4,7 @@ import galleryRouter from "../gallery/routes/gallery.routes.js"
 import { auth } from "../middlewares/token.js";
 import { isAdmin } from "../middlewares/isAdmin.js";
 import productRouter from "../products/routes/product.routes.js";
+import orderRouter from "../orders/orders.routes.js";
 import path from "path";
 
 const router = Router();
@@ -28,5 +29,6 @@ router.get("/logs/:date", auth, isAdmin, (req, res) => {
 router.use("/users", usersRouter);
 router.use("/gallery", galleryRouter); 
 router.use("/products", productRouter);
+router.use("/orders", orderRouter);
 
 export default router;

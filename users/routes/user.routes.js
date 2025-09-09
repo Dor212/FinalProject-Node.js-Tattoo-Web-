@@ -192,7 +192,7 @@ router.post("/contact", async (req, res) => {
   }
 });
 
-router.post("/orders", async (req, res) => {
+/* router.post("/orders", async (req, res) => {
   try {
     const { customerDetails, cart } = req.body;
 
@@ -322,7 +322,7 @@ ${cartLines}
     console.error("שגיאה בקבלת הזמנה:", err);
     res.status(500).json({ error: "שגיאה בשרת" });
   }
-});
+}); */
 
 
 export default router;
