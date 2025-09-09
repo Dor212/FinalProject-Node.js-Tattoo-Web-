@@ -1,6 +1,6 @@
-// routes/orders.routes.js
-const express = require("express");
-const nodemailer = require("nodemailer");
+// routes/orders.routes.js  (ESM + export default)
+import express from "express";
+import nodemailer from "nodemailer";
 
 const router = express.Router();
 
@@ -40,6 +40,7 @@ function computeCanvasTotals(cart = []) {
     else if (typeof price === "number") otherSubtotal += price * qty;
   }
 
+  // מדרגות ל-80×25: 1=220, 2=400, 3=550, מעבר ל-3: כל יחידה נוספת 180
   let standardSubtotal = 0;
   if (standardQty > 0) {
     if (standardQty === 1) standardSubtotal = 220;
@@ -81,8 +82,22 @@ function unitPriceLabel(i) {
   return "—";
 }
 
+/* ================= מיילר ================= */
 
-router.post("/orders", async (req, res) => {
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST, // למשל: "smtp.gmail.com"
+  port: Number(process.env.SMTP_PORT || 465), // 465=secure, 587=starttls
+  secure: process.env.SMTP_SECURE !== "false", // ברירת מחדל true
+  auth: {
+    user: process.env.SMTP_USER || process.env.MY_EMAIL,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
+/* ================= ראוט הזמנה ================= */
+
+// אותו handler לשני נתיבים – כדי לכסות mapping שונה ברואטר הראשי
+const createOrderHandler = async (req, res) => {
   try {
     const { customerDetails, cart, source, section } = req.body;
 
@@ -98,17 +113,7 @@ router.post("/orders", async (req, res) => {
     console.log("פריטים:", cart);
     console.log("Totals:", totals);
 
-  
-    await transporter.sendMail({
-      from: process.env.MY_EMAIL,
-      to: process.env.MY_EMAIL, 
-      replyTo: customerDetails?.email || undefined, 
-      subject,
-      text,
-      html,
-    });
-
-    const to = process.env.MY_EMAIL;
+    const to = process.env.MY_EMAIL || process.env.SMTP_USER;
     const subject = "🛍️ התקבלה הזמנה חדשה מהאתר";
 
     // טקסט פשוט (fallback)
@@ -142,20 +147,24 @@ ${cartLines}
     const rowsHtml = cart
       .map(
         (i, idx) => `
-      <tr>
-        <td style="padding:8px;border-bottom:1px solid #eee;">${idx + 1}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;">${i.title}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">${
-          i.size || "—"
-        }</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">${
-          i.quantity || 1
-        }</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${unitPriceLabel(
-          i
-        )}</td>
-      </tr>
-    `
+          <tr>
+            <td style="padding:8px;border-bottom:1px solid #eee;">${
+              idx + 1
+            }</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;">${
+              i.title
+            }</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">${
+              i.size || "—"
+            }</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">${
+              i.quantity || 1
+            }</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${unitPriceLabel(
+              i
+            )}</td>
+          </tr>
+        `
       )
       .join("");
 
@@ -195,7 +204,7 @@ ${cartLines}
           source || section
             ? `<div style="color:#666;font-size:12px;margin-bottom:8px;">מקור: ${
                 source || "site"
-              } ${section ? " | " + section : ""}</div>`
+              }${section ? " | " + section : ""}</div>`
             : ""
         }
 
@@ -243,8 +252,9 @@ ${cartLines}
     `;
 
     await transporter.sendMail({
-      from: process.env.MY_EMAIL,
-      to,
+      from: process.env.MY_EMAIL, // שולח
+      to, // נמענים (לרוב אתה)
+      replyTo: customerDetails?.email || undefined,
       subject,
       text,
       html,
@@ -258,6 +268,10 @@ ${cartLines}
     console.error("שגיאה בקבלת הזמנה:", err);
     return res.status(500).json({ error: "שגיאה בשרת" });
   }
-});
+};
 
-module.exports = router;
+// תמיכה הן ב-POST /orders והן ב-POST /
+router.post("/orders", createOrderHandler);
+router.post("/", createOrderHandler);
+
+export default router;
