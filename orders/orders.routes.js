@@ -1,10 +1,8 @@
-// routes/orders.routes.js  (ESM + export default)
 import express from "express";
 import nodemailer from "nodemailer";
 
 const router = express.Router();
 
-/* ================= עזרות ================= */
 
 function fmtILS(n) {
   try {
@@ -22,7 +20,7 @@ function computeCanvasTotals(cart = []) {
   let standardQty = 0; // 80×25
   let pairQty = 0; // 50×40
   let tripleQty = 0; // 80×60
-  let otherSubtotal = 0; // פריטים רגילים (עם price)
+  let otherSubtotal = 0; 
 
   for (const i of cart) {
     const size = (i.size || "").trim();
@@ -75,28 +73,24 @@ function unitPriceLabel(i) {
   const size = (i.size || "").trim();
   const cat = (i.category || "").trim();
 
-  if (size === "80×25" || cat === "standard") return "—"; // מדורג
+  if (size === "80×25" || cat === "standard") return "—"; 
   if (size === "50×40" || cat === "pair") return fmtILS(390);
   if (size === "80×60" || cat === "triple") return fmtILS(550);
   if (typeof i.price === "number") return fmtILS(i.price);
   return "—";
 }
 
-/* ================= מיילר ================= */
-
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST, // למשל: "smtp.gmail.com"
-  port: Number(process.env.SMTP_PORT || 465), // 465=secure, 587=starttls
-  secure: process.env.SMTP_SECURE !== "false", // ברירת מחדל true
+  host: process.env.SMTP_HOST, 
+  port: Number(process.env.SMTP_PORT || 465), 
+  secure: process.env.SMTP_SECURE !== "false", 
   auth: {
     user: process.env.SMTP_USER || process.env.MY_EMAIL,
     pass: process.env.SMTP_PASS,
   },
 });
 
-/* ================= ראוט הזמנה ================= */
 
-// אותו handler לשני נתיבים – כדי לכסות mapping שונה ברואטר הראשי
 const createOrderHandler = async (req, res) => {
   try {
     const { customerDetails, cart, source, section } = req.body;
@@ -116,7 +110,6 @@ const createOrderHandler = async (req, res) => {
     const to = process.env.MY_EMAIL || process.env.SMTP_USER;
     const subject = "🛍️ התקבלה הזמנה חדשה מהאתר";
 
-    // טקסט פשוט (fallback)
     const cartLines = cart
       .map((i, idx) => {
         const qty = i.quantity || 1;
@@ -252,8 +245,8 @@ ${cartLines}
     `;
 
     await transporter.sendMail({
-      from: process.env.MY_EMAIL, // שולח
-      to, // נמענים (לרוב אתה)
+      from: process.env.MY_EMAIL, 
+      to, 
       replyTo: customerDetails?.email || undefined,
       subject,
       text,
@@ -270,7 +263,6 @@ ${cartLines}
   }
 };
 
-// תמיכה הן ב-POST /orders והן ב-POST /
 router.post("/orders", createOrderHandler);
 router.post("/", createOrderHandler);
 

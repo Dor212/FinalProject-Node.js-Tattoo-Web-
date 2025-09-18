@@ -1,4 +1,3 @@
-// models/product.schema.js
 import mongoose from "mongoose";
 
 const sizeStockSchema = new mongoose.Schema(

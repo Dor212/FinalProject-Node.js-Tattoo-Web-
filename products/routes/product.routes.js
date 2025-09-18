@@ -56,7 +56,7 @@ function normalizeStockFromBody(body) {
 
 // ============================ ROUTES ============================
 
-// GET products (מסודרים חדש->ישן)
+
 router.get("/", async (req, res) => {
   try {
     const products = await Product.find().sort({ createdAt: -1 });
@@ -67,7 +67,6 @@ router.get("/", async (req, res) => {
   }
 });
 
-// UPLOAD product — תמונת מוצר חובה, כותרת/מחיר חובה, תיאור אופציונלי, מידות אופציונליות
 router.post("/upload", upload.single("image"), async (req, res) => {
   try {
     const { title, price, description } = req.body;
@@ -84,8 +83,6 @@ router.post("/upload", upload.single("image"), async (req, res) => {
       price: toInt(price),
       imageUrl: req.file.path,
     };
-
-    // תיאור אופציונלי
     if (typeof description === "string" && description.trim() !== "") {
       base.description = description.trim();
     }
@@ -104,7 +101,7 @@ router.post("/upload", upload.single("image"), async (req, res) => {
   }
 });
 
-// PURCHASE product — הפחתת מלאי לפי כמויות שביקשת
+
 router.post("/purchase", async (req, res) => {
   const { productId, quantities = {} } = req.body;
   try {
@@ -140,7 +137,7 @@ router.post("/purchase", async (req, res) => {
   }
 });
 
-// PATCH stock — ניהול מלאי (set/add/subtract/reset/remove)
+
 router.patch("/:id/stock", async (req, res) => {
   const toIntLocal = (v) =>
     v !== undefined && v !== null && v !== "" && !isNaN(v)
@@ -230,7 +227,7 @@ router.patch("/:id/stock", async (req, res) => {
   }
 });
 
-// DELETE product
+
 router.delete("/:id", async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
