@@ -4,12 +4,13 @@ import Product from "../models/product.schema.js";
 import { v2 as cloudinary } from "cloudinary";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
 import dotenv from "dotenv";
+import { auth } from "../middlewares/token.js";
+import { isAdmin } from "../middlewares/isAdmin.js";
 
 dotenv.config();
 
 const router = express.Router();
 
-// ----- Cloudinary -----
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -21,17 +22,18 @@ const storage = new CloudinaryStorage({
   params: {
     folder: "merchendise",
     allowed_formats: ["jpeg", "jpg", "png"],
-    public_id: (req, file) => `${Date.now()}-${file.originalname}`,
+    public_id: (req, file) =>
+      `${Date.now()}-${String(file.originalname || "image").replace(/\s+/g, "_")}`,
   },
 });
+
 const upload = multer({ storage });
 
 const toInt = (v) => {
-  const n = parseInt(v, 10);
+  const n = parseInt(String(v), 10);
   return Number.isFinite(n) ? n : 0;
 };
 
-// תמיכה לאחור + נורמליזציה למידות L/XL/XXL
 function normalizeStockFromBody(body) {
   const stockL = body.stockL ?? body.l ?? body.stockSmall ?? body.small;
   const stockXL = body.stockXL ?? body.xl ?? body.stockMedium ?? body.medium;
@@ -54,56 +56,59 @@ function normalizeStockFromBody(body) {
   return Object.keys(stock).length ? stock : null;
 }
 
-// ============================ ROUTES ============================
-
-
 router.get("/", async (req, res) => {
   try {
     const products = await Product.find().sort({ createdAt: -1 });
     res.json(products);
   } catch (err) {
-    console.error("❌ SERVER ERROR:", err);
     res.status(500).json({ error: "Failed to fetch products" });
   }
 });
 
-router.post("/upload", upload.single("image"), async (req, res) => {
-  try {
-    const { title, price, description } = req.body;
+router.post(
+  "/upload",
+  auth,
+  isAdmin,
+  upload.single("image"),
+  async (req, res) => {
+    try {
+      const { title, price, description } = req.body;
 
-    if (!req.file) return res.status(400).json({ error: "Image required" });
-    if (!title) return res.status(400).json({ error: "Title is required" });
-    if (price === undefined || price === null || price === "")
-      return res.status(400).json({ error: "Price is required" });
+      if (!req.file) return res.status(400).json({ error: "Image required" });
+      if (!title) return res.status(400).json({ error: "Title is required" });
+      if (price === undefined || price === null || price === "") {
+        return res.status(400).json({ error: "Price is required" });
+      }
 
-    const stock = normalizeStockFromBody(req.body);
+      const stock = normalizeStockFromBody(req.body);
 
-    const base = {
-      title: String(title).trim(),
-      price: toInt(price),
-      imageUrl: req.file.path,
-    };
-    if (typeof description === "string" && description.trim() !== "") {
-      base.description = description.trim();
+      const base = {
+        title: String(title).trim(),
+        price: toInt(price),
+        imageUrl: req.file.path,
+      };
+
+      if (typeof description === "string" && description.trim() !== "") {
+        base.description = description.trim();
+      }
+
+      if (stock) base.stock = stock;
+
+      const newProduct = new Product(base);
+      await newProduct.save();
+      res.status(201).json(newProduct);
+    } catch (err) {
+      res.status(500).json({
+        error: "Failed to upload product",
+        details: err && err.message ? err.message : "Unknown error",
+      });
     }
-
-    if (stock) base.stock = stock;
-
-    const newProduct = new Product(base);
-    await newProduct.save();
-    res.status(201).json(newProduct);
-  } catch (err) {
-    console.error("❌ SERVER ERROR:", err);
-    res.status(500).json({
-      error: "Failed to upload product",
-      details: err?.message || "Unknown error",
-    });
-  }
-});
-
+  },
+);
 
 router.post("/purchase", async (req, res) => {
   const { productId, quantities = {} } = req.body;
+
   try {
     const product = await Product.findById(productId);
     if (!product) return res.status(404).json({ error: "Product not found" });
@@ -126,31 +131,34 @@ router.post("/purchase", async (req, res) => {
     if (q.xxl && product.stock.xxl)
       product.stock.xxl.current = Math.max(
         0,
-        product.stock.xxl.current - q.xxl
+        product.stock.xxl.current - q.xxl,
       );
 
     await product.save();
     res.json({ message: "Purchase successful", product });
   } catch (err) {
-    console.error("❌ PURCHASE ERROR:", err);
     res.status(500).json({ error: "Failed to update stock" });
   }
 });
 
-
-router.patch("/:id/stock", async (req, res) => {
+router.patch("/:id/stock", auth, isAdmin, async (req, res) => {
   const toIntLocal = (v) =>
-    v !== undefined && v !== null && v !== "" && !isNaN(v)
-      ? parseInt(v, 10)
+    v !== undefined && v !== null && v !== "" && !Number.isNaN(Number(v))
+      ? parseInt(String(v), 10)
       : null;
+
   const mapLegacy = (k) =>
     k === "small" ? "l" : k === "medium" ? "xl" : k === "large" ? "xxl" : k;
 
   try {
     const { id } = req.params;
-    const { action, sizes = {}, createStockIfMissing = false } = req.body || {};
-    const allowed = ["set", "add", "subtract", "reset", "remove"];
-    if (!allowed.includes(action)) {
+    const body = req.body || {};
+    const action = body.action;
+    const sizes = body.sizes || {};
+    const createStockIfMissing = Boolean(body.createStockIfMissing);
+
+    const allowed = new Set(["set", "add", "subtract", "reset", "remove"]);
+    if (!allowed.has(action)) {
       return res.status(400).json({ error: "Invalid action" });
     }
 
@@ -158,15 +166,17 @@ router.patch("/:id/stock", async (req, res) => {
     if (!product) return res.status(404).json({ error: "Product not found" });
 
     if (!product.stock && !createStockIfMissing) {
-      return res.status(400).json({
-        error: "No stock exists. Use createStockIfMissing=true to create.",
-      });
+      return res
+        .status(400)
+        .json({
+          error: "No stock exists. Use createStockIfMissing=true to create.",
+        });
     }
     if (!product.stock) product.stock = {};
 
-    for (const key of Object.keys(sizes)) {
-      const size = mapLegacy(key);
-      const payload = sizes[key] || {};
+    for (const rawKey of Object.keys(sizes)) {
+      const size = mapLegacy(rawKey);
+      const payload = sizes[rawKey] || {};
       if (!["l", "xl", "xxl"].includes(size)) continue;
 
       if (action === "set") {
@@ -176,14 +186,13 @@ router.patch("/:id/stock", async (req, res) => {
         const curr = toIntLocal(payload.current);
         if (init !== null) product.stock[size].initial = Math.max(0, init);
         if (curr !== null) product.stock[size].current = Math.max(0, curr);
-        if (init !== null && curr === null) {
+        if (init !== null && curr === null)
           product.stock[size].current = product.stock[size].initial;
-        }
       }
 
       if (action === "add") {
         const delta = toIntLocal(payload.delta);
-        if (delta) {
+        if (delta && delta > 0) {
           if (!product.stock[size])
             product.stock[size] = { initial: 0, current: 0 };
           product.stock[size].current += delta;
@@ -192,12 +201,12 @@ router.patch("/:id/stock", async (req, res) => {
 
       if (action === "subtract") {
         const delta = toIntLocal(payload.delta);
-        if (delta) {
+        if (delta && delta > 0) {
           if (!product.stock[size])
             product.stock[size] = { initial: 0, current: 0 };
           product.stock[size].current = Math.max(
             0,
-            product.stock[size].current - delta
+            product.stock[size].current - delta,
           );
         }
       }
@@ -215,35 +224,37 @@ router.patch("/:id/stock", async (req, res) => {
       }
     }
 
-    if (Object.keys(product.stock).length === 0) product.stock = undefined;
+    if (product.stock && Object.keys(product.stock).length === 0)
+      product.stock = undefined;
 
     await product.save();
     res.json({ message: "Stock updated", product });
   } catch (err) {
-    console.error("❌ PATCH STOCK ERROR:", err);
-    res
-      .status(500)
-      .json({ error: "Failed to update stock", details: err?.message });
+    res.status(500).json({
+      error: "Failed to update stock",
+      details: err && err.message ? err.message : "Unknown error",
+    });
   }
 });
 
-
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", auth, isAdmin, async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ error: "Product not found" });
 
-    const imageUrl = product.imageUrl;
+    const imageUrl = String(product.imageUrl || "");
     const publicId = imageUrl
       .split("/")
       .slice(-2)
       .join("/")
       .replace(/\.[^/.]+$/, "");
-    await cloudinary.uploader.destroy(publicId);
+
+    if (publicId) {
+      await cloudinary.uploader.destroy(publicId).catch(() => {});
+    }
 
     res.json({ message: "Product and image deleted from Cloudinary" });
   } catch (err) {
-    console.error("❌ DELETE ERROR:", err);
     res.status(500).json({ error: "Failed to delete product" });
   }
 });

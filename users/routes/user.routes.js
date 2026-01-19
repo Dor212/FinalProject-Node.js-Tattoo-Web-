@@ -95,6 +95,11 @@ router.get("/", auth, isAdmin, async (req, res) => {
 
 router.get("/:id", auth, async (req, res) => {
   try {
+    const isSelf = req.user._id === String(req.params.id);
+    if (!isSelf && !req.user.isAdmin) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
     const user = await getUserById(req.params.id);
     return res.json(user);
   } catch (err) {
