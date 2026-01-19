@@ -5,8 +5,8 @@ import path from "path";
 import sharp from "sharp";
 import { fileURLToPath } from "url";
 import { promises as fsp } from "fs";
-import { auth } from "../middlewares/token.js";
-import { isAdmin } from "../middlewares/isAdmin.js";
+import { auth } from "../../middlewares/token.js";
+import { isAdmin } from "../../middlewares/isAdmin.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

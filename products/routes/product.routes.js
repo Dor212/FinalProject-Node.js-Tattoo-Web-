@@ -4,8 +4,8 @@ import Product from "../models/product.schema.js";
 import { v2 as cloudinary } from "cloudinary";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
 import dotenv from "dotenv";
-import { auth } from "../middlewares/token.js";
-import { isAdmin } from "../middlewares/isAdmin.js";
+import { auth } from "../../middlewares/token.js";
+import { isAdmin } from "../../middlewares/isAdmin.js";
 
 dotenv.config();
 
