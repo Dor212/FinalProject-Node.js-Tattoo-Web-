@@ -1,5 +1,5 @@
 import Canvas from "../models/Canvas.js";
-import cloudinary from "../config/cloudinary.js";
+import cloudinary from "../../cloudinary.config.js";
 
 function isHexColor(v) {
   return typeof v === "string" && /^#([0-9a-fA-F]{6})$/.test(v.trim());
