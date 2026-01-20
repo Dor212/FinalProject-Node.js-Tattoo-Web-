@@ -9,7 +9,8 @@ import cors from "cors";
 import path from "path";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
-import opinionRouter from "./Opinion/opinion.index.js";
+import canvasesRouter from "./Canvases/routes/canvases.routes.js";
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -64,6 +65,7 @@ app.use(
   })
 );
 
+app.use("/canvases", canvasesRouter);
 
 app.use(express.static(path.join(__dirname, "public")));
 
