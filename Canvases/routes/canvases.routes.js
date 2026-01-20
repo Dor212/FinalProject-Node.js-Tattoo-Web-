@@ -1,4 +1,4 @@
-import uploadMemory from "../middlewares/uploadMemory.js";
+import uploadMemory from "../middleware/uploadMemory.js";
 import {
   getCanvases,
   createCanvas,
