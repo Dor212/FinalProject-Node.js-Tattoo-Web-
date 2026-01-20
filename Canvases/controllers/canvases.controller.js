@@ -1,61 +1,69 @@
 import Canvas from "../models/Canvas.js";
-import cloudinary from "../utils/cloudinary.js";
 
-const ALLOWED_SIZES = new Set(["80×25", "50×40", "80×60"]);
+function isHexColor(v) {
+  return typeof v === "string" && /^#([0-9a-fA-F]{6})$/.test(v.trim());
+}
 
-const uploadToCloudinary = (buffer, folder) =>
-  new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder, resource_type: "image" },
-      (err, result) => {
-        if (err) reject(err);
-        else resolve(result);
-      },
-    );
-    stream.end(buffer);
-  });
+function slugId(v) {
+  return String(v || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 32);
+}
 
-export const listCanvases = async (req, res) => {
-  const { size } = req.query;
+export async function getCanvases(req, res) {
+  try {
+    const canvases = await Canvas.find().sort({ createdAt: -1 }).lean();
+    res.json(canvases);
+  } catch {
+    res.status(500).json({ message: "Server error" });
+  }
+}
 
-  const query = {};
-  if (typeof size === "string" && size.trim()) query.size = size.trim();
+export async function createCanvas(req, res) {
+  try {
+    const { name, size, imageUrl, variants } = req.body;
 
-  const items = await Canvas.find(query).sort({ createdAt: -1 }).lean();
-  res.json(items);
-};
+    if (!name || !size || !imageUrl) {
+      return res.status(400).json({ message: "Missing fields" });
+    }
 
-export const uploadCanvas = async (req, res) => {
-  const name = String(req.body?.name || "").trim();
-  const size = String(req.body?.size || "").trim();
+    if (!["80×25", "80×60", "50×40"].includes(size)) {
+      return res.status(400).json({ message: "Invalid size" });
+    }
 
-  if (!name) return res.status(400).json({ message: "name is required" });
-  if (!size) return res.status(400).json({ message: "size is required" });
-  if (!ALLOWED_SIZES.has(size))
-    return res.status(400).json({ message: "invalid size" });
-  if (!req.file?.buffer)
-    return res.status(400).json({ message: "image is required" });
+    const rawVariants = Array.isArray(variants) ? variants : [];
+    const cleanVariants = rawVariants
+      .map((v) => ({
+        id: slugId(v?.id || v?.label || v?.color),
+        label: typeof v?.label === "string" ? v.label.trim() : "",
+        color: typeof v?.color === "string" ? v.color.trim() : "",
+        imageUrl: typeof v?.imageUrl === "string" ? v.imageUrl.trim() : "",
+      }))
+      .filter((v) => v.id && isHexColor(v.color) && v.imageUrl);
 
-  const uploaded = await uploadToCloudinary(req.file.buffer, "omer/canvases");
+    const canvas = await Canvas.create({
+      name: String(name).trim(),
+      size,
+      imageUrl: String(imageUrl).trim(),
+      variants: cleanVariants,
+    });
 
-  const doc = await Canvas.create({
-    name,
-    size,
-    imageUrl: uploaded.secure_url,
-    publicId: uploaded.public_id,
-  });
+    res.status(201).json(canvas);
+  } catch {
+    res.status(500).json({ message: "Server error" });
+  }
+}
 
-  res.status(201).json(doc);
-};
-
-export const deleteCanvas = async (req, res) => {
-  const { id } = req.params;
-
-  const doc = await Canvas.findById(id);
-  if (!doc) return res.status(404).json({ message: "not found" });
-
-  await cloudinary.uploader.destroy(doc.publicId, { resource_type: "image" });
-  await doc.deleteOne();
-
-  res.json({ ok: true });
-};
+export async function deleteCanvas(req, res) {
+  try {
+    const { id } = req.params;
+    const deleted = await Canvas.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).json({ message: "Not found" });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ message: "Server error" });
+  }
+}

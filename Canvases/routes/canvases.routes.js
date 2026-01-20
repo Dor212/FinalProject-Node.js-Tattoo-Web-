@@ -1,15 +1,14 @@
 import { Router } from "express";
-import uploadMemory from "../middleware/uploadMemory.js";
 import {
+  getCanvases,
+  createCanvas,
   deleteCanvas,
-  listCanvases,
-  uploadCanvas,
-} from "../controllers/canvases.controller.js";
+} from "../controllers/canvasesController.js";
 
 const router = Router();
 
-router.get("/", listCanvases);
-router.post("/upload", uploadMemory.single("image"), uploadCanvas);
+router.get("/", getCanvases);
+router.post("/", createCanvas);
 router.delete("/:id", deleteCanvas);
 
 export default router;
