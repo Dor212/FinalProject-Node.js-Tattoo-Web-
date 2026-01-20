@@ -3,7 +3,7 @@ import {
   getCanvases,
   createCanvas,
   deleteCanvas,
-} from "../controllers/canvasesController.js";
+} from "../controllers/canvases.controller.js";
 
 const router = Router();
 
