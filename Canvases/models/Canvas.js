@@ -1,12 +1,11 @@
 import mongoose from "mongoose";
 
-const VariantSchema = new mongoose.Schema(
+const CanvasVariantSchema = new mongoose.Schema(
   {
     id: { type: String, required: true },
-    label: { type: String, default: "" },
     color: { type: String, required: true },
+    label: { type: String, default: "" },
     imageUrl: { type: String, required: true },
-    stock: { type: Number, required: true, default: 0 },
   },
   { _id: false },
 );
@@ -14,12 +13,11 @@ const VariantSchema = new mongoose.Schema(
 const CanvasSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
-    size: { type: String, required: true, enum: ["80×25", "80×60", "50×40"] },
+    size: { type: String, required: true, trim: true },
     imageUrl: { type: String, required: true },
-    variants: { type: [VariantSchema], default: [] },
-    createdAt: { type: Date, default: Date.now },
+    variants: { type: [CanvasVariantSchema], default: [] },
   },
-  { versionKey: false },
+  { timestamps: true },
 );
 
 export default mongoose.model("Canvas", CanvasSchema);

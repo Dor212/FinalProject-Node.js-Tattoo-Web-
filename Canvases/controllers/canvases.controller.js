@@ -1,99 +1,122 @@
+import fs from "fs/promises";
+import path from "path";
 import Canvas from "../models/Canvas.js";
-import cloudinary from "../utils/cloudinary.js";
 
-function isHexColor(v) {
-  return typeof v === "string" && /^#([0-9a-fA-F]{6})$/.test(v.trim());
+const uploadsRoot = path.join(process.cwd(), "uploads");
+
+function toPublicUrl(req, relPath) {
+  const base = `${req.protocol}://${req.get("host")}`;
+  const normalized = relPath.replaceAll("\\", "/");
+  return `${base}${normalized.startsWith("/") ? "" : "/"}${normalized}`;
 }
 
-function slugId(v) {
-  return String(v || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 32);
-}
-
-export async function getCanvases(req, res) {
+async function safeUnlink(absPath) {
   try {
-    const canvases = await Canvas.find().sort({ createdAt: -1 }).lean();
-    res.json(canvases);
+    await fs.unlink(absPath);
   } catch {
-    res.status(500).json({ message: "Server error" });
+    return;
   }
 }
 
-export async function createCanvas(req, res) {
+export async function listCanvases(req, res) {
   try {
-    const { name, size } = req.body;
-    const files = req.files || [];
+    const items = await Canvas.find().sort({ createdAt: -1 });
+    return res.json(items);
+  } catch {
+    return res.status(500).json({ message: "Failed to fetch canvases" });
+  }
+}
 
-    if (!name || !size || files.length === 0) {
-      return res.status(400).json({ message: "Missing fields" });
+export async function uploadCanvas(req, res) {
+  try {
+    const name = String(req.body?.name || "").trim();
+    const size = String(req.body?.size || "").trim();
+
+    const mainFile = req.files?.image?.[0] || null;
+    if (!name || !size || !mainFile) {
+      return res.status(400).json({ message: "Missing name/size/image" });
     }
 
-    const mainUpload = await cloudinary.uploader.upload(
-      `data:${files[0].mimetype};base64,${files[0].buffer.toString("base64")}`,
-      { folder: "canvases" },
-    );
+    const mainRel = `/uploads/canvases/${mainFile.filename}`;
+    const imageUrl = toPublicUrl(req, mainRel);
 
-    const canvas = await Canvas.create({
-      name: name.trim(),
+    let variants = [];
+    const rawVariants = req.body?.variants ? JSON.parse(req.body.variants) : [];
+    const variantImageIds = req.body?.variantImageIds
+      ? JSON.parse(req.body.variantImageIds)
+      : [];
+
+    const variantFiles = Array.isArray(req.files?.variantImages)
+      ? req.files.variantImages
+      : [];
+    if (
+      Array.isArray(rawVariants) &&
+      rawVariants.length > 0 &&
+      Array.isArray(variantImageIds)
+    ) {
+      const fileById = new Map();
+      for (let i = 0; i < variantFiles.length; i++) {
+        const id = variantImageIds[i];
+        const f = variantFiles[i];
+        if (typeof id === "string" && f?.filename) {
+          fileById.set(id, f.filename);
+        }
+      }
+
+      variants = rawVariants
+        .filter(
+          (v) => v && typeof v.id === "string" && typeof v.color === "string",
+        )
+        .map((v) => {
+          const fileName = fileById.get(v.id);
+          if (!fileName) return null;
+
+          const rel = `/uploads/canvases/variants/${fileName}`;
+          return {
+            id: v.id,
+            color: String(v.color),
+            label: typeof v.label === "string" ? v.label : "",
+            imageUrl: toPublicUrl(req, rel),
+          };
+        })
+        .filter(Boolean);
+    }
+
+    const created = await Canvas.create({
+      name,
       size,
-      imageUrl: mainUpload.secure_url,
-      variants: [],
+      imageUrl,
+      variants,
     });
 
-    res.status(201).json(canvas);
+    return res.status(201).json(created);
   } catch {
-    res.status(500).json({ message: "Create failed" });
-  }
-}
-
-export async function addVariant(req, res) {
-  try {
-    const { id } = req.params;
-    const { color, label, stock } = req.body;
-    const file = req.file;
-
-    if (!file || !isHexColor(color)) {
-      return res.status(400).json({ message: "Invalid data" });
-    }
-
-    const upload = await cloudinary.uploader.upload(
-      `data:${file.mimetype};base64,${file.buffer.toString("base64")}`,
-      { folder: "canvases" },
-    );
-
-    const variant = {
-      id: slugId(label || color),
-      label: label || "",
-      color,
-      imageUrl: upload.secure_url,
-      stock: Number(stock) || 0,
-    };
-
-    const canvas = await Canvas.findByIdAndUpdate(
-      id,
-      { $push: { variants: variant } },
-      { new: true },
-    );
-
-    if (!canvas) return res.status(404).json({ message: "Not found" });
-
-    res.json(canvas);
-  } catch {
-    res.status(500).json({ message: "Add variant failed" });
+    return res.status(500).json({ message: "Failed to upload canvas" });
   }
 }
 
 export async function deleteCanvas(req, res) {
   try {
     const { id } = req.params;
-    const deleted = await Canvas.findByIdAndDelete(id);
-    if (!deleted) return res.status(404).json({ message: "Not found" });
-    res.json({ ok: true });
+    const doc = await Canvas.findById(id);
+    if (!doc) return res.status(404).json({ message: "Canvas not found" });
+
+    const urls = [doc.imageUrl, ...(doc.variants || []).map((v) => v.imageUrl)];
+    for (const url of urls) {
+      const u = String(url || "");
+      const idx = u.indexOf("/uploads/");
+      if (idx === -1) continue;
+
+      const rel = u.slice(idx);
+      const abs = path.join(process.cwd(), rel);
+      if (abs.startsWith(uploadsRoot)) {
+        await safeUnlink(abs);
+      }
+    }
+
+    await Canvas.findByIdAndDelete(id);
+    return res.json({ ok: true });
   } catch {
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Failed to delete canvas" });
   }
 }
