@@ -25,36 +25,65 @@ export async function getCanvases(req, res) {
 
 export async function createCanvas(req, res) {
   try {
-    const { name, size, imageUrl, variants } = req.body;
+    const { name, size } = req.body;
+    const files = req.files || [];
 
-    if (!name || !size || !imageUrl) {
+    if (!name || !size || files.length === 0) {
       return res.status(400).json({ message: "Missing fields" });
     }
 
-    if (!["80×25", "80×60", "50×40"].includes(size)) {
-      return res.status(400).json({ message: "Invalid size" });
-    }
-
-    const rawVariants = Array.isArray(variants) ? variants : [];
-    const cleanVariants = rawVariants
-      .map((v) => ({
-        id: slugId(v?.id || v?.label || v?.color),
-        label: typeof v?.label === "string" ? v.label.trim() : "",
-        color: typeof v?.color === "string" ? v.color.trim() : "",
-        imageUrl: typeof v?.imageUrl === "string" ? v.imageUrl.trim() : "",
-      }))
-      .filter((v) => v.id && isHexColor(v.color) && v.imageUrl);
+    const mainUpload = await cloudinary.uploader.upload(
+      `data:${files[0].mimetype};base64,${files[0].buffer.toString("base64")}`,
+      { folder: "canvases" },
+    );
 
     const canvas = await Canvas.create({
-      name: String(name).trim(),
+      name: name.trim(),
       size,
-      imageUrl: String(imageUrl).trim(),
-      variants: cleanVariants,
+      imageUrl: mainUpload.secure_url,
+      variants: [],
     });
 
     res.status(201).json(canvas);
   } catch {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Create failed" });
+  }
+}
+
+export async function addVariant(req, res) {
+  try {
+    const { id } = req.params;
+    const { color, label, stock } = req.body;
+    const file = req.file;
+
+    if (!file || !isHexColor(color)) {
+      return res.status(400).json({ message: "Invalid data" });
+    }
+
+    const upload = await cloudinary.uploader.upload(
+      `data:${file.mimetype};base64,${file.buffer.toString("base64")}`,
+      { folder: "canvases" },
+    );
+
+    const variant = {
+      id: slugId(label || color),
+      label: label || "",
+      color,
+      imageUrl: upload.secure_url,
+      stock: Number(stock) || 0,
+    };
+
+    const canvas = await Canvas.findByIdAndUpdate(
+      id,
+      { $push: { variants: variant } },
+      { new: true },
+    );
+
+    if (!canvas) return res.status(404).json({ message: "Not found" });
+
+    res.json(canvas);
+  } catch {
+    res.status(500).json({ message: "Add variant failed" });
   }
 }
 
@@ -66,53 +95,5 @@ export async function deleteCanvas(req, res) {
     res.json({ ok: true });
   } catch {
     res.status(500).json({ message: "Server error" });
-  }
-}
-
-export async function uploadCanvas(req, res) {
-  try {
-    const { name, size } = req.body;
-    const files = req.files || [];
-
-    if (!name || !size || files.length === 0) {
-      return res.status(400).json({ message: "Missing fields" });
-    }
-
-    // התמונה הראשית = הראשונה
-    const mainFile = files[0];
-
-    const mainUpload = await cloudinary.uploader.upload(
-      `data:${mainFile.mimetype};base64,${mainFile.buffer.toString("base64")}`,
-      { folder: "canvases" },
-    );
-
-    const variants = [];
-
-    for (let i = 1; i < files.length; i++) {
-      const f = files[i];
-
-      const upload = await cloudinary.uploader.upload(
-        `data:${f.mimetype};base64,${f.buffer.toString("base64")}`,
-        { folder: "canvases" },
-      );
-
-      variants.push({
-        id: `v-${i}`,
-        color: "#000000",
-        imageUrl: upload.secure_url,
-      });
-    }
-
-    const canvas = await Canvas.create({
-      name: name.trim(),
-      size,
-      imageUrl: mainUpload.secure_url,
-      variants,
-    });
-
-    res.status(201).json(canvas);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: "Upload failed" });
   }
 }

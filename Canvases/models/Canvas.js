@@ -6,6 +6,7 @@ const VariantSchema = new mongoose.Schema(
     label: { type: String, default: "" },
     color: { type: String, required: true },
     imageUrl: { type: String, required: true },
+    stock: { type: Number, required: true, default: 0 },
   },
   { _id: false },
 );

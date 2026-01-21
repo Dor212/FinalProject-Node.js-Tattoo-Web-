@@ -4,13 +4,14 @@ import {
   getCanvases,
   createCanvas,
   deleteCanvas,
-  uploadCanvas,
+  addVariant,
 } from "../controllers/canvases.controller.js";
 
 const router = Router();
 
 router.get("/", getCanvases);
-router.post("/upload", uploadMemory.any(), uploadCanvas);
+router.post("/", uploadMemory.any(), createCanvas);
+router.post("/:id/variants", uploadMemory.single("image"), addVariant);
 router.delete("/:id", deleteCanvas);
 
 export default router;
