@@ -17,6 +17,8 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 const app = express();
+app.set("trust proxy", 1);
+
 const PORT = process.env.PORT || 8080;
 
 const allowedOrigins = [
@@ -49,8 +51,6 @@ app.options("*", cors());
 app.use(express.json({ limit: "5mb" }));
 app.use(morganLogger);
 
-// ✅ חשוב: להגיש את uploads כדי שתמונות קאנבסים יעבדו
-// multer בדרך כלל שומר לשורש הפרויקט: process.cwd()/uploads/...
 app.use(
   "/uploads",
   express.static(path.join(process.cwd(), "uploads"), {

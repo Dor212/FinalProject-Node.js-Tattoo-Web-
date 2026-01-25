@@ -3,11 +3,22 @@ import path from "path";
 import Canvas from "../models/Canvas.js";
 
 const uploadsRoot = path.join(process.cwd(), "uploads");
+const canvasesAbsDir = path.join(uploadsRoot, "canvases");
+const variantsAbsDir = path.join(canvasesAbsDir, "variants");
 
 function toPublicUrl(req, relPath) {
   const base = `${req.protocol}://${req.get("host")}`;
-  const normalized = relPath.replaceAll("\\", "/");
+  const normalized = String(relPath || "").replaceAll("\\", "/");
   return `${base}${normalized.startsWith("/") ? "" : "/"}${normalized}`;
+}
+
+async function exists(absPath) {
+  try {
+    await fs.access(absPath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function safeUnlink(absPath) {
@@ -16,6 +27,11 @@ async function safeUnlink(absPath) {
   } catch {
     return;
   }
+}
+
+function relToAbs(rel) {
+  const clean = String(rel || "").replace(/^\/+/, "");
+  return path.join(process.cwd(), clean);
 }
 
 export async function listCanvases(req, res) {
@@ -35,14 +51,6 @@ export async function uploadCanvas(req, res) {
     const mainFile = req.files?.image?.[0] || null;
     if (!name || !size || !mainFile) {
       return res.status(400).json({ message: "Missing name/size/image" });
-    }
-
-    const exists = await Canvas.findOne({ name, size });
-    if (exists) {
-      return res.status(409).json({
-        message:
-          "כבר קיים קאנבס עם אותו שם ומידה. מחק אותו בעמוד אדמין ואז העלה מחדש.",
-      });
     }
 
     const mainRel = `/uploads/canvases/${mainFile.filename}`;
@@ -72,23 +80,33 @@ export async function uploadCanvas(req, res) {
         }
       }
 
-      variants = rawVariants
-        .filter(
-          (v) => v && typeof v.id === "string" && typeof v.color === "string",
-        )
-        .map((v) => {
-          const fileName = fileById.get(v.id);
-          if (!fileName) return null;
+      const cleaned = rawVariants.filter(
+        (v) => v && typeof v.id === "string" && typeof v.color === "string",
+      );
 
-          const rel = `/uploads/canvases/variants/${fileName}`;
-          return {
-            id: v.id,
-            color: String(v.color),
-            label: typeof v.label === "string" ? v.label : "",
-            imageUrl: toPublicUrl(req, rel),
-          };
-        })
-        .filter(Boolean);
+      const out = [];
+      for (const v of cleaned) {
+        const fileName = fileById.get(v.id);
+        if (!fileName) continue;
+
+        const absVariant = path.join(variantsAbsDir, fileName);
+        const absCanvas = path.join(canvasesAbsDir, fileName);
+
+        const rel = (await exists(absVariant))
+          ? `/uploads/canvases/variants/${fileName}`
+          : (await exists(absCanvas))
+            ? `/uploads/canvases/${fileName}`
+            : `/uploads/canvases/variants/${fileName}`;
+
+        out.push({
+          id: v.id,
+          color: String(v.color),
+          label: typeof v.label === "string" ? v.label : "",
+          imageUrl: toPublicUrl(req, rel),
+        });
+      }
+
+      variants = out;
     }
 
     const created = await Canvas.create({
@@ -117,7 +135,7 @@ export async function deleteCanvas(req, res) {
       if (idx === -1) continue;
 
       const rel = u.slice(idx);
-      const abs = path.join(process.cwd(), rel);
+      const abs = relToAbs(rel);
       if (abs.startsWith(uploadsRoot)) {
         await safeUnlink(abs);
       }

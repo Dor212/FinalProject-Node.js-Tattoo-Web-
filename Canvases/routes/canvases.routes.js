@@ -6,7 +6,7 @@ import {
   deleteCanvas,
   listCanvases,
   uploadCanvas,
-} from "../controllers/canvases.controller.js";
+} from "./controllers/canvases.controller.js";
 
 const router = Router();
 
