@@ -11,7 +11,6 @@ import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import canvasesRouter from "./Canvases/routes/canvases.routes.js";
 
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -43,26 +42,38 @@ app.use(
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "x-auth-token"],
     maxAge: 86400,
-  })
+  }),
 );
 
 app.options("*", cors());
 app.use(express.json({ limit: "5mb" }));
 app.use(morganLogger);
 
+// ✅ חשוב: להגיש את uploads כדי שתמונות קאנבסים יעבדו
+// multer בדרך כלל שומר לשורש הפרויקט: process.cwd()/uploads/...
+app.use(
+  "/uploads",
+  express.static(path.join(process.cwd(), "uploads"), {
+    setHeaders: (res) => {
+      res.set("Access-Control-Allow-Origin", "*");
+    },
+  }),
+);
 
 app.use(router);
+
 app.use(
   "/merchendise",
-  express.static(path.join(__dirname, "public", "merchendise"))
+  express.static(path.join(__dirname, "public", "merchendise")),
 );
+
 app.use(
   "/sketchesTattoo",
   express.static(path.join(__dirname, "public", "sketchesTattoo"), {
     setHeaders: (res) => {
       res.set("Access-Control-Allow-Origin", "*");
     },
-  })
+  }),
 );
 
 app.use("/canvases", canvasesRouter);
