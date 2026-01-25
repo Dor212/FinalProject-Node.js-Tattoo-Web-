@@ -37,6 +37,14 @@ export async function uploadCanvas(req, res) {
       return res.status(400).json({ message: "Missing name/size/image" });
     }
 
+    const exists = await Canvas.findOne({ name, size });
+    if (exists) {
+      return res.status(409).json({
+        message:
+          "כבר קיים קאנבס עם אותו שם ומידה. מחק אותו בעמוד אדמין ואז העלה מחדש.",
+      });
+    }
+
     const mainRel = `/uploads/canvases/${mainFile.filename}`;
     const imageUrl = toPublicUrl(req, mainRel);
 
@@ -49,6 +57,7 @@ export async function uploadCanvas(req, res) {
     const variantFiles = Array.isArray(req.files?.variantImages)
       ? req.files.variantImages
       : [];
+
     if (
       Array.isArray(rawVariants) &&
       rawVariants.length > 0 &&
