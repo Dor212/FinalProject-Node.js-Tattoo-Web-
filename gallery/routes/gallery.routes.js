@@ -13,7 +13,8 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-const ALLOWED_CATEGORIES = new Set(["small", "medium", "large"]);
+const ALLOWED_CATEGORIES = ["small", "medium", "large"];
+const ALLOWED_SET = new Set(ALLOWED_CATEGORIES);
 
 const baseGalleryPath = path.join(__dirname, "../../public/sketchesTattoo");
 
@@ -21,7 +22,7 @@ const safeCategory = (raw) => {
   const c = String(raw || "")
     .toLowerCase()
     .trim();
-  return ALLOWED_CATEGORIES.has(c) ? c : null;
+  return ALLOWED_SET.has(c) ? c : null;
 };
 
 const safeFilename = (raw) => {
@@ -31,39 +32,100 @@ const safeFilename = (raw) => {
   return f;
 };
 
+const ensureDir = (dir) => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+};
+
+const toUrl = (category, file) => `/sketchesTattoo/${category}/${file}`;
+
+const readCategoryUrls = async (category) => {
+  const categoryPath = path.join(baseGalleryPath, category);
+  try {
+    const files = await fsp.readdir(categoryPath);
+    return files
+      .filter((f) => f && !f.startsWith("."))
+      .map((file) => toUrl(category, file));
+  } catch {
+    return [];
+  }
+};
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const category = safeCategory(req.params.category);
     if (!category) return cb(new Error("Invalid category"));
 
     const categoryPath = path.join(baseGalleryPath, category);
-    if (!fs.existsSync(categoryPath)) {
-      fs.mkdirSync(categoryPath, { recursive: true });
-    }
+    ensureDir(categoryPath);
     cb(null, categoryPath);
   },
   filename: (req, file, cb) => {
-    const original = String(file.originalname || "image").replace(/\s+/g, "_");
-    const uniqueName = `${Date.now()}-${original}`;
+    const original = String(file.originalname || "image")
+      .replace(/\s+/g, "_")
+      .replace(/[^\w.\-()]/g, "");
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}-${original}`;
     cb(null, uniqueName);
   },
 });
 
 const upload = multer({ storage });
 
-router.get("/:category", (req, res) => {
+async function processSketchToPngBW(inputAbsPath, outAbsPath) {
+  await sharp(inputAbsPath).grayscale().threshold(180).png().toFile(outAbsPath);
+}
+
+router.get("/", async (req, res) => {
+  try {
+    const out = {};
+    for (const cat of ALLOWED_CATEGORIES) {
+      out[cat] = await readCategoryUrls(cat);
+    }
+    res.json(out);
+  } catch {
+    res.status(500).json({ ok: false, message: "Failed to load sketches" });
+  }
+});
+
+
+router.get("/:category", async (req, res) => {
   const category = safeCategory(req.params.category);
   if (!category) return res.json([]);
-
-  const categoryPath = path.join(baseGalleryPath, category);
-  if (!fs.existsSync(categoryPath)) {
-    return res.json([]);
-  }
-
-  const files = fs.readdirSync(categoryPath);
-  const urls = files.map((file) => `/sketchesTattoo/${category}/${file}`);
+  const urls = await readCategoryUrls(category);
   res.json(urls);
 });
+
+router.post(
+  "/:category",
+  auth,
+  isAdmin,
+  upload.single("image"),
+  async (req, res) => {
+    const category = safeCategory(req.params.category);
+    if (!category)
+      return res.status(400).json({ ok: false, message: "Invalid category" });
+    if (!req.file)
+      return res.status(400).json({ ok: false, message: "No file uploaded" });
+
+    const categoryPath = path.join(baseGalleryPath, category);
+    const originalPath = path.join(categoryPath, req.file.filename);
+
+    const processedFilename = `processed-${req.file.filename.replace(/\.(png|jpg|jpeg|webp)$/i, "")}.png`;
+    const processedPath = path.join(categoryPath, processedFilename);
+
+    try {
+      await processSketchToPngBW(originalPath, processedPath);
+      await fsp.unlink(originalPath).catch(() => {});
+      return res
+        .status(201)
+        .json({ ok: true, imageUrl: toUrl(category, processedFilename) });
+    } catch {
+      await fsp.unlink(originalPath).catch(() => {});
+      return res
+        .status(500)
+        .json({ ok: false, message: "Failed to process sketch" });
+    }
+  },
+);
 
 router.post(
   "/upload/:category",
@@ -71,47 +133,33 @@ router.post(
   isAdmin,
   upload.single("image"),
   async (req, res) => {
-    const category = safeCategory(req.params.category);
-    if (!category) return res.status(400).json({ error: "Invalid category" });
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
-    const categoryPath = path.join(baseGalleryPath, category);
-    const originalPath = path.join(categoryPath, req.file.filename);
-    const processedFilename = `processed-${req.file.filename}`;
-    const processedPath = path.join(categoryPath, processedFilename);
-
-    try {
-      await sharp(originalPath)
-        .grayscale()
-        .threshold(180)
-        .png()
-        .toFile(processedPath);
-      await fsp.unlink(originalPath).catch(() => {});
-      res.status(201).json({
-        message: "Sketch uploaded and processed",
-        imageUrl: `/sketchesTattoo/${category}/${processedFilename}`,
-      });
-    } catch (err) {
-      await fsp.unlink(originalPath).catch(() => {});
-      res.status(500).json({ error: "Failed to process sketch" });
-    }
+    req.params.category = req.params.category; 
+    return router.handle(
+      { ...req, url: `/${req.params.category}`, method: "POST" },
+      res,
+    );
   },
 );
+
 
 router.delete("/:category/:filename", auth, isAdmin, async (req, res) => {
   const category = safeCategory(req.params.category);
   const filename = safeFilename(req.params.filename);
 
-  if (!category) return res.status(400).json({ error: "Invalid category" });
-  if (!filename) return res.status(400).json({ error: "Invalid filename" });
+  if (!category)
+    return res.status(400).json({ ok: false, message: "Invalid category" });
+  if (!filename)
+    return res.status(400).json({ ok: false, message: "Invalid filename" });
 
   const filePath = path.join(baseGalleryPath, category, filename);
 
   try {
     await fsp.unlink(filePath);
-    res.json({ message: "Image deleted successfully" });
-  } catch (err) {
-    res.status(404).json({ error: "File not found or cannot be deleted" });
+    res.json({ ok: true });
+  } catch {
+    res
+      .status(404)
+      .json({ ok: false, message: "File not found or cannot be deleted" });
   }
 });
 

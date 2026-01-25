@@ -25,6 +25,7 @@ router.get("/logs/:date", auth, isAdmin, (req, res) => {
 
 router.use("/users", usersRouter);
 router.use("/gallery", galleryRouter); 
+router.use("/sketches", galleryRouter);
 router.use("/products", productRouter);
 router.use("/orders", orderRouter);
 router.use("/opinion", opinionRouter);
