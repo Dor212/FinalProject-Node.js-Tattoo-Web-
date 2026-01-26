@@ -6,6 +6,7 @@ const CanvasVariantSchema = new mongoose.Schema(
     color: { type: String, required: true },
     label: { type: String, default: "" },
     imageUrl: { type: String, required: true },
+    imagePublicId: { type: String, default: "" },
   },
   { _id: false },
 );
@@ -15,6 +16,7 @@ const CanvasSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     size: { type: String, required: true, trim: true },
     imageUrl: { type: String, required: true },
+    imagePublicId: { type: String, default: "" },
     variants: { type: [CanvasVariantSchema], default: [] },
   },
   { timestamps: true },

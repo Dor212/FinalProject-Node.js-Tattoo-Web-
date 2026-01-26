@@ -4,7 +4,6 @@ import { opinionRateLimit } from "./opinion.rateLimit.js";
 import { opinionUpload } from "./opinion.upload.js";
 import Opinion from "./opinion.model.js";
 import cloudinary from "./cloudinary.service.js";
-
 import { verifyToken } from "../services/authService.js";
 import User from "../users/models/User.schema.js";
 

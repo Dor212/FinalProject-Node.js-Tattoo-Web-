@@ -1,25 +1,9 @@
 import fs from "fs/promises";
 import path from "path";
 import Canvas from "../models/Canvas.js";
+import cloudinary from "../../services/cloudinary.service.js";
 
 const uploadsRoot = path.join(process.cwd(), "uploads");
-const canvasesAbsDir = path.join(uploadsRoot, "canvases");
-const variantsAbsDir = path.join(canvasesAbsDir, "variants");
-
-function toPublicUrl(req, relPath) {
-  const base = `${req.protocol}://${req.get("host")}`;
-  const normalized = String(relPath || "").replaceAll("\\", "/");
-  return `${base}${normalized.startsWith("/") ? "" : "/"}${normalized}`;
-}
-
-async function exists(absPath) {
-  try {
-    await fs.access(absPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 async function safeUnlink(absPath) {
   try {
@@ -32,6 +16,33 @@ async function safeUnlink(absPath) {
 function relToAbs(rel) {
   const clean = String(rel || "").replace(/^\/+/, "");
   return path.join(process.cwd(), clean);
+}
+
+function uploadBufferToCloudinary(buffer, folder, publicIdBase) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        public_id: publicIdBase,
+        resource_type: "image",
+        overwrite: false,
+      },
+      (err, result) => {
+        if (err) return reject(err);
+        resolve(result);
+      },
+    );
+    stream.end(buffer);
+  });
+}
+
+function safeNameBase(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9\-]/g, "")
+    .slice(0, 60);
 }
 
 export async function listCanvases(req, res) {
@@ -49,12 +60,21 @@ export async function uploadCanvas(req, res) {
     const size = String(req.body?.size || "").trim();
 
     const mainFile = req.files?.image?.[0] || null;
-    if (!name || !size || !mainFile) {
+    if (!name || !size || !mainFile?.buffer) {
       return res.status(400).json({ message: "Missing name/size/image" });
     }
 
-    const mainRel = `/uploads/canvases/${mainFile.filename}`;
-    const imageUrl = toPublicUrl(req, mainRel);
+    const base = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    const tag = safeNameBase(name) || "canvas";
+
+    const mainUpload = await uploadBufferToCloudinary(
+      mainFile.buffer,
+      "omeravivart/canvases",
+      `${tag}-${base}`,
+    );
+
+    const imageUrl = mainUpload.secure_url;
+    const imagePublicId = mainUpload.public_id;
 
     let variants = [];
     const rawVariants = req.body?.variants ? JSON.parse(req.body.variants) : [];
@@ -75,8 +95,8 @@ export async function uploadCanvas(req, res) {
       for (let i = 0; i < variantFiles.length; i++) {
         const id = variantImageIds[i];
         const f = variantFiles[i];
-        if (typeof id === "string" && f?.filename) {
-          fileById.set(id, f.filename);
+        if (typeof id === "string" && f?.buffer) {
+          fileById.set(id, f);
         }
       }
 
@@ -86,23 +106,22 @@ export async function uploadCanvas(req, res) {
 
       const out = [];
       for (const v of cleaned) {
-        const fileName = fileById.get(v.id);
-        if (!fileName) continue;
+        const f = fileById.get(v.id);
+        if (!f?.buffer) continue;
 
-        const absVariant = path.join(variantsAbsDir, fileName);
-        const absCanvas = path.join(canvasesAbsDir, fileName);
-
-        const rel = (await exists(absVariant))
-          ? `/uploads/canvases/variants/${fileName}`
-          : (await exists(absCanvas))
-            ? `/uploads/canvases/${fileName}`
-            : `/uploads/canvases/variants/${fileName}`;
+        const vBase = `${tag}-${base}-v-${safeNameBase(v.id) || Math.round(Math.random() * 1e9)}`;
+        const uploaded = await uploadBufferToCloudinary(
+          f.buffer,
+          "omeravivart/canvases/variants",
+          vBase,
+        );
 
         out.push({
           id: v.id,
           color: String(v.color),
           label: typeof v.label === "string" ? v.label : "",
-          imageUrl: toPublicUrl(req, rel),
+          imageUrl: uploaded.secure_url,
+          imagePublicId: uploaded.public_id,
         });
       }
 
@@ -113,6 +132,7 @@ export async function uploadCanvas(req, res) {
       name,
       size,
       imageUrl,
+      imagePublicId,
       variants,
     });
 
@@ -127,6 +147,20 @@ export async function deleteCanvas(req, res) {
     const { id } = req.params;
     const doc = await Canvas.findById(id);
     if (!doc) return res.status(404).json({ message: "Canvas not found" });
+
+    const pids = [];
+    if (doc.imagePublicId) pids.push(doc.imagePublicId);
+    for (const v of doc.variants || []) {
+      if (v?.imagePublicId) pids.push(v.imagePublicId);
+    }
+
+    for (const pid of pids) {
+      try {
+        await cloudinary.uploader.destroy(pid, { resource_type: "image" });
+      } catch {
+        continue;
+      }
+    }
 
     const urls = [doc.imageUrl, ...(doc.variants || []).map((v) => v.imageUrl)];
     for (const url of urls) {
