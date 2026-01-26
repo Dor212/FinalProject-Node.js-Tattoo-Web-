@@ -1,10 +1,10 @@
 import { Router } from "express";
+import uploadMemory from "../../middlewares/uploadMemory.js";
 import {
-  deleteCanvas,
   listCanvases,
   uploadCanvas,
+  deleteCanvas,
 } from "../controllers/canvases.controller.js";
-import uploadMemory from "../../middlewares/uploadMemory.js";
 
 const router = Router();
 
