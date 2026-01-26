@@ -95,9 +95,7 @@ export async function uploadCanvas(req, res) {
       for (let i = 0; i < variantFiles.length; i++) {
         const id = variantImageIds[i];
         const f = variantFiles[i];
-        if (typeof id === "string" && f?.buffer) {
-          fileById.set(id, f);
-        }
+        if (typeof id === "string" && f?.buffer) fileById.set(id, f);
       }
 
       const cleaned = rawVariants.filter(
@@ -170,9 +168,7 @@ export async function deleteCanvas(req, res) {
 
       const rel = u.slice(idx);
       const abs = relToAbs(rel);
-      if (abs.startsWith(uploadsRoot)) {
-        await safeUnlink(abs);
-      }
+      if (abs.startsWith(uploadsRoot)) await safeUnlink(abs);
     }
 
     await Canvas.findByIdAndDelete(id);
