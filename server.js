@@ -10,6 +10,7 @@ import path from "path";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import canvasesRouter from "./Canvases/routes/canvases.routes.js";
+import hypayRoutes from "./routes/hypay.routes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,7 +51,7 @@ app.use(
 app.options("*", cors());
 app.use(express.json({ limit: "5mb" }));
 app.use(morganLogger);
-
+app.use("/api/hyp", hypayRoutes);
 app.use(
   "/uploads",
   express.static(path.join(process.cwd(), "uploads"), {
