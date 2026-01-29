@@ -4,7 +4,7 @@ import galleryRouter from "../gallery/routes/gallery.routes.js"
 import { auth } from "../middlewares/token.js";
 import { isAdmin } from "../middlewares/isAdmin.js";
 import productRouter from "../products/routes/product.routes.js";
-import orderRouter from "../orders/orders.routes.js";
+import ordersRouter from "../orders/orders.routes.js";
 import opinionRouter from "../Opinion/opinion.index.js";
 import path from "path";
 
@@ -27,7 +27,7 @@ router.use("/users", usersRouter);
 router.use("/gallery", galleryRouter); 
 router.use("/sketches", galleryRouter);
 router.use("/products", productRouter);
-router.use("/orders", orderRouter);
+router.use("/api/orders", ordersRouter);
 router.use("/opinion", opinionRouter);
 
 
