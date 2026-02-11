@@ -1,9 +1,8 @@
 import { Router } from "express";
-import User from "../models/User.schema.js"
+import User from "../models/User.schema.js";
 import {
   addUser,
   deleteUser,
-  login,
   getUserById,
 } from "../services/userDataAccess.service.js";
 import { validation } from "../../middlewares/validation.js";
@@ -12,75 +11,95 @@ import RegisterSchema from "../validations/RegisterSchema.js";
 import { generateToken } from "../../services/authService.js";
 import { auth } from "../../middlewares/token.js";
 import { isAdmin } from "../../middlewares/isAdmin.js";
-import { v4 as uuid } from "uuid";
-import path from "path";
-import { fileURLToPath } from "url";
-import { dirname } from "path";
-import fs from "fs";
 import nodemailer from "nodemailer";
-import multer from "multer";
 import bcrypt from "bcryptjs";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const baseGalleryPath = path.join(__dirname, "../../../public/sketchesTattoo");
-
-const galleryStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const category = req.params.category;``
-    const uploadPath = path.join(baseGalleryPath, category);
-
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-
-    cb(null, uploadPath);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const extension = path.extname(file.originalname);
-    cb(null, file.fieldname + "-" + uniqueSuffix + extension);
-  },
-});
-
-const uploadGallery = multer({ storage: galleryStorage });
-
 
 const router = Router();
 
+const ADMIN_EMAIL = String(
+  process.env.ADMIN_EMAIL || process.env.MY_EMAIL || "dorohana212@gmail.com",
+).trim();
+const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_SECURE =
+  String(process.env.SMTP_SECURE || "")
+    .trim()
+    .toLowerCase() === "true" || SMTP_PORT === 465;
+const SMTP_USER = String(process.env.SMTP_USER || "").trim();
+const SMTP_PASS = String(process.env.SMTP_PASS || "").trim();
+const SMTP_FROM = String(
+  process.env.SMTP_FROM || process.env.MY_EMAIL || SMTP_USER || "",
+).trim();
+
+function makeTransport() {
+  if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
+    return nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_SECURE,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    });
+  }
+
+  const gmailUser = String(process.env.MY_EMAIL || "").trim();
+  const gmailPass = String(process.env.MY_EMAIL_PASSWORD || "").trim();
+  if (gmailUser && gmailPass) {
+    return nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: gmailUser, pass: gmailPass },
+    });
+  }
+
+  throw new Error("Missing SMTP credentials");
+}
+
+function parseBase64Image(dataUrl) {
+  const s = String(dataUrl || "");
+  const m = s.match(/^data:(image\/(png|jpeg|jpg));base64,(.+)$/i);
+  if (!m) return null;
+  const mime = m[1].toLowerCase();
+  const base64 = m[3];
+  const ext = mime.includes("png") ? "png" : "jpg";
+  const buf = Buffer.from(base64, "base64");
+  return { mime, ext, buf };
+}
 
 router.post("/register", validation(RegisterSchema), async (req, res) => {
   try {
     const data = req.body;
     const newUser = await addUser(data);
-
     return res.json({ message: "User Created", newUser });
   } catch (err) {
     return res.status(500).send(err.message);
   }
 });
 
-
-
 router.post("/login", validation(LoginSchema), async (req, res) => {
   try {
     const { email, password } = req.body;
 
     const user = await User.findOne({ email });
-    if (!user) {
+    if (!user)
       return res.status(401).json({ error: "Invalid email or password" });
-    }
 
     const isPasswordMatch = await bcrypt.compare(password, user.password);
-    if (!isPasswordMatch) {
+    if (!isPasswordMatch)
       return res.status(401).json({ error: "Invalid email or password" });
-    }
 
     const token = generateToken(user);
-
-    res.json({ token });
+    return res.json({ token });
   } catch (err) {
     return res.status(500).send(err.message);
+  }
+});
+
+router.get("/me", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select("-password");
+    if (!user) return res.status(404).json({ error: "User not found" });
+    return res.json({ user });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to load user" });
   }
 });
 
@@ -96,9 +115,8 @@ router.get("/", auth, isAdmin, async (req, res) => {
 router.get("/:id", auth, async (req, res) => {
   try {
     const isSelf = req.user._id === String(req.params.id);
-    if (!isSelf && !req.user.isAdmin) {
+    if (!isSelf && !req.user.isAdmin)
       return res.status(403).json({ error: "Forbidden" });
-    }
 
     const user = await getUserById(req.params.id);
     return res.json(user);
@@ -107,11 +125,10 @@ router.get("/:id", auth, async (req, res) => {
   }
 });
 
-
 router.delete("/:id", auth, isAdmin, async (req, res) => {
   try {
-    const user = await deleteUser(req.params.id);
-    return res.send("User Delete");
+    await deleteUser(req.params.id);
+    return res.json({ ok: true });
   } catch (err) {
     return res.status(500).send(err.message);
   }
@@ -119,81 +136,81 @@ router.delete("/:id", auth, isAdmin, async (req, res) => {
 
 router.post("/send-image", async (req, res) => {
   try {
-    const { image, name, phone } = req.body;
-    const artistEmail = "dorohana212@gmail.com";
-
+    const { image, name, phone, email } = req.body || {};
     if (!image || !name || !phone) {
       return res
         .status(400)
         .json({ error: "Missing image, name or phone number" });
     }
 
-    const fileName = `${uuid()}.png`;
-    const filePath = path.join(__dirname, "../../../public/temp", fileName);
-    const base64Data = image.replace(/^data:image\/png;base64,/, "");
+    const parsed = parseBase64Image(image);
+    if (!parsed) return res.status(400).json({ error: "Invalid image format" });
 
-    if (!fs.existsSync(path.dirname(filePath))) {
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    }
+    const transporter = makeTransport();
 
-    fs.writeFileSync(filePath, base64Data, "base64");
+    const html = `
+      <div style="font-family:Arial,Helvetica,sans-serif;line-height:1.45;color:#111;">
+        <h2 style="margin:0 0 10px;">בקשת הדמיה חדשה</h2>
+        <div><strong>שם:</strong> ${String(name)}</div>
+        <div><strong>טלפון:</strong> ${String(phone)}</div>
+        ${email ? `<div><strong>אימייל:</strong> ${String(email)}</div>` : ""}
+        <div style="margin-top:10px;">התמונה מצורפת.</div>
+      </div>
+    `;
 
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.MY_EMAIL,
-        pass: process.env.MY_EMAIL_PASSWORD,
-      },
-    });
-
-    const mailOptions = {
-      from: process.env.MY_EMAIL,
-      to: artistEmail,
+    await transporter.sendMail({
+      from: SMTP_FROM || ADMIN_EMAIL,
+      to: ADMIN_EMAIL,
       subject: "New Tattoo Preview Submission",
-      text: `New tattoo preview was submitted from the website.\n\nName: ${name}\nPhone: ${phone}`,
+      html,
       attachments: [
         {
-          filename: fileName,
-          path: filePath,
+          filename: `simulation.${parsed.ext}`,
+          content: parsed.buf,
+          contentType: parsed.mime,
         },
       ],
-    };
+    });
 
-    await transporter.sendMail(mailOptions);
-
-    setTimeout(() => {
-      fs.unlink(filePath, () => {});
-    }, 5000);
-
-    res.status(200).json({ message: "Image and details sent to email!" });
-  } catch (err) {
-    console.error("Error sending email:", err);
-    res.status(500).json({ error: "Failed to send email" });
+    return res
+      .status(200)
+      .json({ message: "Image and details sent to email!" });
+  } catch {
+    return res.status(500).json({ error: "Failed to send email" });
   }
 });
 
 router.post("/contact", async (req, res) => {
-  const { name, email, message } = req.body;
   try {
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.MY_EMAIL,
-        pass: process.env.MY_EMAIL_PASSWORD,
-      },
-    });
+    const { name, email, message, phone } = req.body || {};
+    if (!name || !email || !message) {
+      return res.status(400).json({ error: "Missing name, email or message" });
+    }
+
+    const transporter = makeTransport();
+
+    const html = `
+      <div style="font-family:Arial,Helvetica,sans-serif;line-height:1.45;color:#111;">
+        <h2 style="margin:0 0 10px;">פנייה חדשה מהאתר</h2>
+        <div><strong>שם:</strong> ${String(name)}</div>
+        <div><strong>אימייל:</strong> ${String(email)}</div>
+        ${phone ? `<div><strong>טלפון:</strong> ${String(phone)}</div>` : ""}
+        <div style="margin-top:10px;"><strong>הודעה:</strong></div>
+        <div style="white-space:pre-wrap;">${String(message)}</div>
+      </div>
+    `;
 
     await transporter.sendMail({
-      from: `"Website Contact" <${process.env.SMTP_USER}>`,
-      to: "your-email@domain.com",
-      subject: `New message from ${name}`,
-      html: `<p><strong>From:</strong> ${name} (${email})</p><p>${message}</p>`,
+      from: SMTP_FROM || ADMIN_EMAIL,
+      to: ADMIN_EMAIL,
+      subject: `New message from ${String(name)}`,
+      html,
+      replyTo: String(email),
     });
 
-    res.json({ message: "Email sent" });
-  } catch (err) {
-    console.error("Error sending email:", err);
-    res.status(500).json({ error: "Email failed" });
+    return res.json({ message: "Email sent" });
+  } catch {
+    return res.status(500).json({ error: "Email failed" });
   }
 });
 

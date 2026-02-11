@@ -4,7 +4,7 @@ const CustomerDetailsSchema = new mongoose.Schema(
   {
     fullname: { type: String, required: true },
     phone: { type: String, required: true },
-    email: { type: String, default: null },
+    email: { type: String, default: "" },
     city: { type: String, required: true },
     street: { type: String, required: true },
     houseNumber: { type: String, required: true },
@@ -29,6 +29,9 @@ const CartItemSchema = new mongoose.Schema(
 
 const TotalsSchema = new mongoose.Schema(
   {
+    subtotal: { type: Number, default: 0 },
+    shipping: { type: Number, default: 0 },
+    total: { type: Number, default: 0 },
     standardQty: { type: Number, default: 0 },
     pairQty: { type: Number, default: 0 },
     tripleQty: { type: Number, default: 0 },
@@ -36,9 +39,18 @@ const TotalsSchema = new mongoose.Schema(
     pairSubtotal: { type: Number, default: 0 },
     tripleSubtotal: { type: Number, default: 0 },
     otherSubtotal: { type: Number, default: 0 },
-    subtotal: { type: Number, default: 0 },
-    shipping: { type: Number, default: 0 },
-    total: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
+const PaymentSchema = new mongoose.Schema(
+  {
+    provider: { type: String, default: "hyp" },
+    orderId: { type: String, default: "" },
+    ccode: { type: String, default: "" },
+    transactionId: { type: String, default: "" },
+    raw: { type: Object, default: null },
+    verifiedAt: { type: Date, default: null },
   },
   { _id: false },
 );
@@ -50,9 +62,16 @@ const OrderSchema = new mongoose.Schema(
     customerDetails: { type: CustomerDetailsSchema, required: true },
     cart: { type: [CartItemSchema], required: true },
     totals: { type: TotalsSchema, required: true },
-    mailSent: { type: Boolean, default: false },
-    mailError: { type: String, default: null },
-    status: { type: String, default: "received" },
+    payment: { type: PaymentSchema, default: () => ({}) },
+    status: {
+      type: String,
+      enum: ["pending_payment", "paid", "failed", "canceled"],
+      default: "pending_payment",
+    },
+    adminMailSent: { type: Boolean, default: false },
+    customerMailSent: { type: Boolean, default: false },
+    adminMailError: { type: String, default: "" },
+    customerMailError: { type: String, default: "" },
   },
   { timestamps: true },
 );

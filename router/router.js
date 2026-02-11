@@ -1,10 +1,9 @@
 import { Router } from "express";
 import usersRouter from "../users/routes/user.routes.js";
-import galleryRouter from "../gallery/routes/gallery.routes.js"
+import galleryRouter from "../gallery/routes/gallery.routes.js";
 import { auth } from "../middlewares/token.js";
 import { isAdmin } from "../middlewares/isAdmin.js";
 import productRouter from "../products/routes/product.routes.js";
-import ordersRouter from "../orders/orders.routes.js";
 import opinionRouter from "../Opinion/opinion.index.js";
 import path from "path";
 
@@ -24,11 +23,9 @@ router.get("/logs/:date", auth, isAdmin, (req, res) => {
 });
 
 router.use("/users", usersRouter);
-router.use("/gallery", galleryRouter); 
+router.use("/gallery", galleryRouter);
 router.use("/sketches", galleryRouter);
 router.use("/products", productRouter);
-router.use("/api/orders", ordersRouter);
 router.use("/opinion", opinionRouter);
-
 
 export default router;

@@ -1,25 +1,20 @@
 import express from "express";
-import nodemailer from "nodemailer";
-import { hypApiSignSign, hypApiSignVerify } from "../services/hypay.service.js";
+import { Order } from "./order.model.js";
+import {
+  hypApiSignSign,
+  hypApiSignVerify,
+  buildReturnUrls,
+} from "../services/hypay.service.js";
+import {
+  getTransport,
+  getMailMeta,
+  formatAdminOrderEmail,
+  formatCustomerOrderEmail,
+} from "./orders.mailer.js";
 
 const router = express.Router();
 
-const PENDING_TTL_MS = 1000 * 60 * 45;
-const pending = new Map();
-
-function now() {
-  return Date.now();
-}
-
-function cleanupPending() {
-  const t = now();
-  for (const [orderId, v] of pending.entries()) {
-    if (!v || !v.createdAt || t - v.createdAt > PENDING_TTL_MS)
-      pending.delete(orderId);
-  }
-}
-
-function fmtILS(n) {
+const fmtILS = (n) => {
   try {
     return new Intl.NumberFormat("he-IL", {
       style: "currency",
@@ -29,6 +24,26 @@ function fmtILS(n) {
   } catch {
     return `${Number(n).toFixed(0)}₪`;
   }
+};
+
+function createHypOrderId() {
+  return `ORD-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+}
+
+function isSuccessfulCCode(ccode) {
+  const v = String(ccode ?? "").trim();
+  return v === "0" || v === "000";
+}
+
+function pickOrderId(q, data) {
+  return String(
+    q?.Order || q?.order || data?.Order || data?.order || data?.orderId || "",
+  ).trim();
+}
+
+function pickCCode(q, data) {
+  const v = data?.CCode ?? data?.ccode ?? q?.CCode ?? q?.ccode;
+  return v === undefined || v === null ? "" : String(v);
 }
 
 function computeCanvasTotals(cart = []) {
@@ -37,35 +52,27 @@ function computeCanvasTotals(cart = []) {
   let tripleQty = 0;
   let otherSubtotal = 0;
 
-  for (const i of cart) {
-    const size = (i.size || "").trim();
-    const cat = (i.category || "").trim();
-    const qty = Number(i.quantity || 1);
-    const price = typeof i.price === "number" ? i.price : undefined;
+  for (const item of cart) {
+    const qty = Number(item.quantity || 1);
+    const price = Number(item.price || 0);
+    const cat = String(item.category || item.type || "").toLowerCase();
 
-    const isStandard = size === "80×25" || cat === "standard";
-    const isPair = size === "50×40" || cat === "pair";
-    const isTriple = size === "80×60" || cat === "triple";
-
-    if (isStandard) standardQty += qty;
-    else if (isPair) pairQty += qty;
-    else if (isTriple) tripleQty += qty;
-    else if (typeof price === "number") otherSubtotal += price * qty;
+    if (cat === "standard") standardQty += qty;
+    else if (cat === "pair") pairQty += qty;
+    else if (cat === "triple") tripleQty += qty;
+    else otherSubtotal += price * qty;
   }
 
-  let standardSubtotal = 0;
-  if (standardQty > 0) {
-    if (standardQty === 1) standardSubtotal = 220;
-    else if (standardQty === 2) standardSubtotal = 400;
-    else if (standardQty === 3) standardSubtotal = 550;
-    else standardSubtotal = 550 + (standardQty - 3) * 180;
-  }
+  const standardPrice = 200;
+  const pairPrice = 300;
+  const triplePrice = 400;
 
-  const pairSubtotal = pairQty * 390;
-  const tripleSubtotal = tripleQty * 550;
+  const standardSubtotal = standardQty * standardPrice;
+  const pairSubtotal = pairQty * pairPrice;
+  const tripleSubtotal = tripleQty * triplePrice;
 
-  const canvasSubtotal = standardSubtotal + pairSubtotal + tripleSubtotal;
-  const subtotal = canvasSubtotal + otherSubtotal;
+  const subtotal =
+    standardSubtotal + pairSubtotal + tripleSubtotal + otherSubtotal;
   const shipping = 0;
   const total = subtotal + shipping;
 
@@ -83,330 +90,240 @@ function computeCanvasTotals(cart = []) {
   };
 }
 
-function unitPriceLabel(i) {
-  const size = (i.size || "").trim();
-  const cat = (i.category || "").trim();
+async function maybeSendEmails(order) {
+  const transporter = getTransport();
+  const meta = getMailMeta();
 
-  if (size === "80×25" || cat === "standard") return "—";
-  if (size === "50×40" || cat === "pair") return fmtILS(390);
-  if (size === "80×60" || cat === "triple") return fmtILS(550);
-  if (typeof i.price === "number") return fmtILS(i.price);
-  return "—";
-}
-
-function buildFrom() {
-  const raw = (process.env.SMTP_FROM || "").trim();
-  if (raw) {
-    const u = (process.env.SMTP_USER || "").trim();
-    if (u && raw.includes("SMTP_USER")) return raw.replaceAll("SMTP_USER", u);
-    return raw;
+  if (!order.adminMailSent) {
+    try {
+      const email = formatAdminOrderEmail(order, fmtILS);
+      await transporter.sendMail({
+        from: meta.from,
+        to: meta.to,
+        subject: email.subject,
+        html: email.html,
+      });
+      order.adminMailSent = true;
+      order.adminMailError = "";
+    } catch (e) {
+      order.adminMailError = String(e?.message || e);
+    }
   }
-  return process.env.MY_EMAIL || process.env.SMTP_USER;
-}
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 587),
-  secure: String(process.env.SMTP_SECURE || "false").toLowerCase() === "true",
-  auth: {
-    user: process.env.SMTP_USER || process.env.MY_EMAIL,
-    pass: process.env.SMTP_PASS,
-  },
-});
-
-async function sendOrderEmail({
-  orderId,
-  customerDetails,
-  cart,
-  totals,
-  payment,
-}) {
-  const to = process.env.MY_EMAIL || process.env.SMTP_USER;
-  const subject = "🧾 הזמנה שולמה בהצלחה באתר (HYP)";
-
-  const cartLines = cart
-    .map((i, idx) => {
-      const qty = i.quantity || 1;
-      return `${idx + 1}. ${i.title} | מידה: ${i.size || "—"} | כמות: ${qty} | מחיר יח': ${unitPriceLabel(i)}`;
-    })
-    .join("\n");
-
-  const paymentBlock = payment
-    ? `
-[תשלום]
-Order: ${payment.Order ?? orderId}
-CCode: ${payment.CCode ?? "—"}
-Id: ${payment.Id ?? "—"}
-Token: ${payment.Token ?? "—"}
-`
-    : "";
-
-  const text = `
-הזמנה שולמה בהצלחה 🎉
-מספר הזמנה: ${orderId}
-
-[פרטי לקוח]
-שם: ${customerDetails.fullname || "—"}
-טלפון: ${customerDetails.phone || "—"}
-כתובת: ${customerDetails.street || ""} ${customerDetails.houseNumber || ""}, ${customerDetails.city || ""} (${customerDetails.zip || ""})
-אימייל: ${customerDetails.email || "—"}
-
-[מוצרים]
-${cartLines}
-
-סך הכל: ${fmtILS(totals.total)}
-${paymentBlock}
-`.trim();
-
-  const rowsHtml = cart
-    .map(
-      (i, idx) => `
-        <tr>
-          <td style="padding:8px;border-bottom:1px solid #eee;">${idx + 1}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;">${i.title}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">${i.size || "—"}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">${i.quantity || 1}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${unitPriceLabel(i)}</td>
-        </tr>
-      `,
-    )
-    .join("");
-
-  const breakdown = (() => {
-    const parts = [];
-    if (totals.standardQty > 0)
-      parts.push(
-        `<div>סטנדרטי 80×25: ${totals.standardQty} יח' — ${fmtILS(totals.standardSubtotal)}</div>`,
-      );
-    if (totals.pairQty > 0)
-      parts.push(
-        `<div>זוגות 50×40: ${totals.pairQty} סט — ${fmtILS(totals.pairSubtotal)}</div>`,
-      );
-    if (totals.tripleQty > 0)
-      parts.push(
-        `<div>שלישיות 80×60: ${totals.tripleQty} סט — ${fmtILS(totals.tripleSubtotal)}</div>`,
-      );
-    if (totals.otherSubtotal > 0)
-      parts.push(`<div>מוצרים אחרים: ${fmtILS(totals.otherSubtotal)}</div>`);
-    return parts.length
-      ? `<h4 style="margin:16px 0 6px;">פירוט חישוב קאנבסים</h4><div style="line-height:1.7;">${parts.join("")}</div>`
-      : "";
-  })();
-
-  const paymentHtml = payment
-    ? `
-      <h3 style="margin:16px 0 6px;">תשלום</h3>
-      <div style="background:#f7f7f7;padding:12px;border-radius:8px;line-height:1.7;">
-        <div><b>Order:</b> ${payment.Order ?? orderId}</div>
-        <div><b>CCode:</b> ${payment.CCode ?? "—"}</div>
-        <div><b>Id:</b> ${payment.Id ?? "—"}</div>
-        <div><b>Token:</b> ${payment.Token ?? "—"}</div>
-      </div>
-    `
-    : "";
-
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:700px;color:#111;" dir="rtl">
-      <h2 style="margin:0 0 12px;">הזמנה שולמה בהצלחה 🎉</h2>
-      <div style="color:#666;font-size:12px;margin-bottom:8px;">מספר הזמנה: ${orderId}</div>
-
-      <h3 style="margin:12px 0 6px;">פרטי לקוח</h3>
-      <div style="background:#f7f7f7;padding:12px;border-radius:8px;line-height:1.7;">
-        <div><b>שם מלא:</b> ${customerDetails.fullname || "—"}</div>
-        <div><b>טלפון:</b> ${customerDetails.phone || "—"}</div>
-        <div><b>כתובת:</b> ${customerDetails.street || "—"} ${customerDetails.houseNumber || ""}, ${customerDetails.city || "—"}</div>
-        ${customerDetails.zip ? `<div><b>מיקוד:</b> ${customerDetails.zip}</div>` : ""}
-        <div><b>אימייל:</b> ${customerDetails.email || "—"}</div>
-      </div>
-
-      <h3 style="margin:16px 0 6px;">מוצרים</h3>
-      <table style="width:100%;border-collapse:collapse;border:1px solid #eee;">
-        <thead>
-          <tr style="background:#fafafa;">
-            <th style="padding:8px;text-align:right;border-bottom:1px solid #eee;">#</th>
-            <th style="padding:8px;text-align:right;border-bottom:1px solid #eee;">מוצר</th>
-            <th style="padding:8px;text-align:center;border-bottom:1px solid #eee;">מידה</th>
-            <th style="padding:8px;text-align:center;border-bottom:1px solid #eee;">כמות</th>
-            <th style="padding:8px;text-align:right;border-bottom:1px solid #eee;">מחיר יח'</th>
-          </tr>
-        </thead>
-        <tbody>${rowsHtml}</tbody>
-        <tfoot>
-          <tr>
-            <td colspan="4" style="padding:10px;text-align:left;font-weight:bold;">סך הכל:</td>
-            <td style="padding:10px;text-align:right;font-weight:bold;">${fmtILS(totals.total)}</td>
-          </tr>
-        </tfoot>
-      </table>
-
-      ${breakdown}
-      ${paymentHtml}
-
-      <p style="font-size:12px;color:#666;margin-top:10px;">הודעת מייל זו נשלחה אוטומטית מהשרת.</p>
-    </div>
-  `;
-
-  await transporter.sendMail({
-    from: buildFrom(),
-    to,
-    replyTo: customerDetails?.email || undefined,
-    subject,
-    text,
-    html,
-  });
-}
-
-function normalizeQuery(reqQuery) {
-  const out = {};
-  for (const [k, v] of Object.entries(reqQuery || {})) {
-    if (Array.isArray(v)) out[k] = v[0];
-    else out[k] = v;
+  const customerEmail = String(order.customerDetails?.email || "").trim();
+  if (customerEmail && !order.customerMailSent) {
+    try {
+      const email = formatCustomerOrderEmail(order, fmtILS);
+      await transporter.sendMail({
+        from: meta.from,
+        to: customerEmail,
+        subject: email.subject,
+        html: email.html,
+      });
+      order.customerMailSent = true;
+      order.customerMailError = "";
+    } catch (e) {
+      order.customerMailError = String(e?.message || e);
+    }
   }
-  return out;
-}
 
-function makeOrderId() {
-  const r = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `ORD-${Date.now()}-${r}`;
+  await order.save();
 }
 
 router.post("/checkout", async (req, res) => {
   try {
-    cleanupPending();
+    const { cart = [], customerDetails = {}, section = "" } = req.body || {};
+    if (!Array.isArray(cart) || cart.length === 0)
+      return res.status(400).json({ ok: false, message: "Cart is empty" });
 
-    const { customerDetails, cart, source, section } = req.body || {};
-
-    if (!customerDetails || !Array.isArray(cart) || cart.length === 0) {
-      return res.status(400).json({ ok: false, error: "חסרים פרטים להזמנה" });
+    const { fullname, phone, city, street, houseNumber } =
+      customerDetails || {};
+    if (!fullname || !phone || !city || !street || !houseNumber) {
+      return res
+        .status(400)
+        .json({ ok: false, message: "Missing customer details" });
     }
 
     const totals = computeCanvasTotals(cart);
-    const orderId = makeOrderId();
+    if (!totals.total || totals.total <= 0)
+      return res.status(400).json({ ok: false, message: "Invalid total" });
 
-    pending.set(orderId, {
-      createdAt: now(),
+    const orderId = createHypOrderId();
+
+    await Order.create({
+      source: "site",
+      section,
       customerDetails,
       cart,
       totals,
-      source: source || "checkout",
-      section: section || "/checkout",
+      payment: { provider: "hyp", orderId },
+      status: "pending_payment",
     });
 
-    const fullName = String(customerDetails.fullname || "").trim();
-    const phone = String(customerDetails.phone || "").trim();
-    const email = customerDetails.email
-      ? String(customerDetails.email).trim()
-      : undefined;
-
-    const clientName = fullName.split(" ")[0] || undefined;
-    const clientLName = fullName.split(" ").slice(1).join(" ") || undefined;
-
     const amountMinor = Math.round(Number(totals.total) * 100);
+    const { successUrl, failureUrl, cancelUrl } = buildReturnUrls();
 
-    const payload = {
+    const signRes = await hypApiSignSign({
       orderId,
-      info: `OmerAviv order ${orderId}`,
+      info: `Order ${orderId}`,
       amount: amountMinor,
       coin: 1,
       pageLang: "HEB",
       moreData: true,
-      userId: "000000000",
-      clientName,
-      clientLName,
-      email,
-      phone,
-      cell: phone,
-      street: customerDetails.street
-        ? String(customerDetails.street).trim()
-        : undefined,
-      city: customerDetails.city
-        ? String(customerDetails.city).trim()
-        : undefined,
-      zip: customerDetails.zip ? String(customerDetails.zip).trim() : undefined,
-    };
-
-    const signResult = await hypApiSignSign(payload);
-    const base = process.env.HYP_BASE_URL;
-    const paymentUrl = `${base}?${signResult.raw}`;
-
-    return res.json({
-      ok: true,
-      orderId,
-      totals,
-      paymentUrl,
+      fixTash: true,
+      tash: 1,
+      sendHesh: false,
+      sendEmail: false,
+      pritim: true,
+      clientName: String(customerDetails.fullname || "").split(" ")[0] || "",
+      clientLName:
+        String(customerDetails.fullname || "")
+          .split(" ")
+          .slice(1)
+          .join(" ") || "",
+      phone: customerDetails.phone || "",
+      cell: customerDetails.phone || "",
+      email: customerDetails.email || "",
+      street: customerDetails.street || "",
+      city: customerDetails.city || "",
+      zip: customerDetails.zip || "",
+      tmp: 1,
     });
+
+    const { data } = signRes;
+
+    const basePaymentUrl = `${process.env.HYP_BASE_URL}?action=pay&Masof=${process.env.HYP_MASOF}`;
+    const paymentUrl =
+      `${basePaymentUrl}` +
+      `&Order=${encodeURIComponent(orderId)}` +
+      `&info=${encodeURIComponent(`Order ${orderId}`)}` +
+      `&Amount=${encodeURIComponent(amountMinor)}` +
+      `&Coin=1` +
+      `&PageLang=HEB` +
+      `&Sign=${encodeURIComponent(data.signature)}` +
+      `&successUrl=${encodeURIComponent(successUrl)}` +
+      `&failureUrl=${encodeURIComponent(failureUrl)}` +
+      `&cancelUrl=${encodeURIComponent(cancelUrl)}`;
+
+    return res.json({ ok: true, paymentUrl, orderId });
   } catch (err) {
-    return res.status(500).json({
-      ok: false,
-      message: err instanceof Error ? err.message : "Unknown error",
-    });
+    return res
+      .status(500)
+      .json({ ok: false, message: err.message || "Checkout failed" });
   }
 });
 
 router.get("/confirm-payment", async (req, res) => {
   try {
-    cleanupPending();
+    const orderId = pickOrderId(req.query, null);
+    const ccodeIncoming = pickCCode(req.query, null);
 
-    const q = normalizeQuery(req.query);
-    const verifyResult = await hypApiSignVerify(q);
+    if (!orderId)
+      return res.status(400).json({ ok: false, message: "Missing order id" });
+    if (!ccodeIncoming)
+      return res.status(400).json({ ok: false, message: "Missing CCode" });
 
-    const ccode = String(verifyResult.data.CCode ?? "");
-    const verified = ccode === "0";
-    const orderId = String(verifyResult.data.Order ?? q.Order ?? "").slice(
-      0,
-      64,
-    );
-
-    if (!verified) {
-      return res.json({
-        ok: true,
-        verified: false,
-        ccode,
-        orderId: orderId || null,
-        data: verifyResult.data,
-      });
+    let verifyData = null;
+    try {
+      const verifyRes = await hypApiSignVerify(req.query || {});
+      verifyData = verifyRes?.data || null;
+    } catch (e) {
+      return res
+        .status(400)
+        .json({ ok: false, message: "Verification failed" });
     }
 
-    const saved = orderId ? pending.get(orderId) : null;
+    const ccode = pickCCode(req.query, verifyData);
+    const success = isSuccessfulCCode(ccode);
 
-    if (saved) {
-      await sendOrderEmail({
-        orderId,
-        customerDetails: saved.customerDetails,
-        cart: saved.cart,
-        totals: saved.totals,
-        payment: verifyResult.data,
-      });
-      pending.delete(orderId);
-    } else {
-      await transporter.sendMail({
-        from: buildFrom(),
-        to: process.env.MY_EMAIL || process.env.SMTP_USER,
-        subject: "🧾 תשלום התקבל (לא נמצאה הזמנה בזיכרון)",
-        text: `תשלום התקבל בהצלחה אבל לא נמצאה הזמנה תואמת בזיכרון.\nOrder: ${orderId || "—"}\nCCode: ${ccode}\nId: ${verifyResult.data.Id ?? "—"}`,
-      });
+    const order = await Order.findOne({ "payment.orderId": orderId });
+    if (!order)
+      return res.status(404).json({ ok: false, message: "Order not found" });
+
+    order.payment = {
+      ...(order.payment || {}),
+      orderId,
+      ccode: String(ccode ?? ""),
+      transactionId: String(
+        verifyData?.TranId || verifyData?.Id || verifyData?.dealId || "",
+      ),
+      raw: verifyData,
+      verifiedAt: new Date(),
+    };
+
+    if (success) order.status = "paid";
+    else order.status = "failed";
+
+    await order.save();
+
+    if (success) {
+      await maybeSendEmails(order);
     }
 
-    return res.json({
-      ok: true,
-      verified: true,
-      ccode,
-      orderId: orderId || null,
-      data: verifyResult.data,
-    });
+    return res.json({ ok: true, orderId, success, status: order.status });
   } catch (err) {
-    return res.status(500).json({
-      ok: false,
-      message: err instanceof Error ? err.message : "Unknown error",
-    });
+    return res
+      .status(500)
+      .json({ ok: false, message: err.message || "Verify failed" });
   }
 });
 
-router.post("/orders/checkout", (req, res, next) =>
-  router.handle({ ...req, url: "/checkout" }, res, next),
-);
-router.get("/orders/confirm-payment", (req, res, next) =>
-  router.handle({ ...req, url: "/confirm-payment" }, res, next),
-);
+router.post("/dev/mark-paid/:orderId", async (req, res) => {
+  try {
+    const devKey = String(process.env.DEV_ORDER_KEY || "").trim();
+    const headerKey = String(req.headers["x-dev-key"] || "").trim();
+
+    if (!devKey || headerKey !== devKey)
+      return res.status(403).json({ ok: false, message: "Forbidden" });
+
+    const orderId = String(req.params.orderId || "").trim();
+    const order = await Order.findOne({ "payment.orderId": orderId });
+    if (!order)
+      return res.status(404).json({ ok: false, message: "Order not found" });
+
+    order.status = "paid";
+    await order.save();
+
+    await maybeSendEmails(order);
+
+    return res.json({
+      ok: true,
+      orderId,
+      status: order.status,
+      adminMailSent: order.adminMailSent,
+      customerMailSent: order.customerMailSent,
+    });
+  } catch (err) {
+    return res
+      .status(500)
+      .json({ ok: false, message: err.message || "Failed" });
+  }
+});
+
+router.get("/status/:orderId", async (req, res) => {
+  try {
+    const orderId = String(req.params.orderId || "").trim();
+    if (!orderId)
+      return res.status(400).json({ ok: false, message: "Missing orderId" });
+
+    const order = await Order.findOne({ "payment.orderId": orderId }).lean();
+    if (!order)
+      return res.status(404).json({ ok: false, message: "Order not found" });
+
+    return res.json({
+      ok: true,
+      orderId,
+      status: order.status,
+      adminMailSent: !!order.adminMailSent,
+      customerMailSent: !!order.customerMailSent,
+      adminMailError: String(order.adminMailError || ""),
+      customerMailError: String(order.customerMailError || ""),
+    });
+  } catch (err) {
+    return res
+      .status(500)
+      .json({ ok: false, message: err.message || "Failed" });
+  }
+});
 
 export default router;
