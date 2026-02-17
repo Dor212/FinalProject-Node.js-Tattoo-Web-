@@ -16,41 +16,41 @@ import bcrypt from "bcryptjs";
 
 const router = Router();
 
-const ADMIN_EMAIL = String(
-  process.env.ADMIN_EMAIL || process.env.MY_EMAIL || "dorohana212@gmail.com",
-).trim();
-const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
-const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const cleanEnv = (v) => {
+  if (v == null) return "";
+  const s = String(v).trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    return s.slice(1, -1).trim();
+  }
+  return s;
+};
+
+const MY_EMAIL = cleanEnv(process.env.MY_EMAIL || "dorohana212@gmail.com");
+const SMTP_HOST = cleanEnv(process.env.SMTP_HOST || "");
+const SMTP_PORT = Number(cleanEnv(process.env.SMTP_PORT || "587"));
 const SMTP_SECURE =
-  String(process.env.SMTP_SECURE || "")
-    .trim()
-    .toLowerCase() === "true" || SMTP_PORT === 465;
-const SMTP_USER = String(process.env.SMTP_USER || "").trim();
-const SMTP_PASS = String(process.env.SMTP_PASS || "").trim();
-const SMTP_FROM = String(
-  process.env.SMTP_FROM || process.env.MY_EMAIL || SMTP_USER || "",
-).trim();
+  cleanEnv(process.env.SMTP_SECURE || "").toLowerCase() === "true" ||
+  SMTP_PORT === 465;
+
+const SMTP_USER = cleanEnv(process.env.SMTP_USER || "");
+const SMTP_PASS = cleanEnv(process.env.SMTP_PASS || "");
+const SMTP_FROM = cleanEnv(process.env.SMTP_FROM || SMTP_USER || MY_EMAIL);
 
 function makeTransport() {
-  if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
-    return nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_SECURE,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-    });
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+    throw new Error("Missing SMTP credentials (SMTP_HOST/SMTP_USER/SMTP_PASS)");
   }
 
-  const gmailUser = String(process.env.MY_EMAIL || "").trim();
-  const gmailPass = String(process.env.MY_EMAIL_PASSWORD || "").trim();
-  if (gmailUser && gmailPass) {
-    return nodemailer.createTransport({
-      service: "gmail",
-      auth: { user: gmailUser, pass: gmailPass },
-    });
-  }
-
-  throw new Error("Missing SMTP credentials");
+  return nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_SECURE,
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+    tls: { minVersion: "TLSv1.2" },
+  });
 }
 
 function parseBase64Image(dataUrl) {
@@ -146,6 +146,12 @@ router.post("/send-image", async (req, res) => {
     const parsed = parseBase64Image(image);
     if (!parsed) return res.status(400).json({ error: "Invalid image format" });
 
+    const { mime, ext, buf } = parsed;
+
+    const maxBytes = 7 * 1024 * 1024;
+    if (buf.length > maxBytes)
+      return res.status(413).json({ error: "Image too large" });
+
     const transporter = makeTransport();
 
     const html = `
@@ -159,24 +165,21 @@ router.post("/send-image", async (req, res) => {
     `;
 
     await transporter.sendMail({
-      from: SMTP_FROM || ADMIN_EMAIL,
-      to: ADMIN_EMAIL,
+      from: SMTP_FROM,
+      to: MY_EMAIL,
       subject: "New Tattoo Preview Submission",
       html,
       attachments: [
-        {
-          filename: `simulation.${parsed.ext}`,
-          content: parsed.buf,
-          contentType: parsed.mime,
-        },
+        { filename: `simulation.${ext}`, content: buf, contentType: mime },
       ],
     });
 
     return res
       .status(200)
-      .json({ message: "Image and details sent to email!" });
-  } catch {
-    return res.status(500).json({ error: "Failed to send email" });
+      .json({ ok: true, message: "Image and details sent to email!" });
+  } catch (err) {
+    console.error("send-image failed:", err);
+    return res.status(500).json({ error: String(err?.message || err) });
   }
 });
 
@@ -201,16 +204,19 @@ router.post("/contact", async (req, res) => {
     `;
 
     await transporter.sendMail({
-      from: SMTP_FROM || ADMIN_EMAIL,
-      to: ADMIN_EMAIL,
+      from: SMTP_FROM,
+      to: MY_EMAIL,
       subject: `New message from ${String(name)}`,
       html,
       replyTo: String(email),
     });
 
     return res.json({ message: "Email sent" });
-  } catch {
-    return res.status(500).json({ error: "Email failed" });
+  } catch (err) {
+    console.error("contact failed:", err);
+    return res
+      .status(500)
+      .json({ error: String(err?.message || "Email failed") });
   }
 });
 
