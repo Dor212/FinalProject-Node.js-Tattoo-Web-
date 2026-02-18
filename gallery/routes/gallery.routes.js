@@ -71,8 +71,35 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 async function processSketchToPngBW(inputAbsPath, outAbsPath) {
-  await sharp(inputAbsPath).grayscale().threshold(180).png().toFile(outAbsPath);
+  const whiteThr = 245; 
+
+  const { data, info } = await sharp(inputAbsPath)
+    .ensureAlpha()
+    .grayscale()
+    .threshold(180)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const out = Buffer.from(data);
+
+  for (let i = 0; i < out.length; i += 4) {
+    const r = out[i];
+    const g = out[i + 1];
+    const b = out[i + 2];
+
+    if (r >= whiteThr && g >= whiteThr && b >= whiteThr) {
+      out[i + 3] = 0;
+    } else {
+      out[i] = 0;
+      out[i + 1] = 0;
+      out[i + 2] = 0;
+      out[i + 3] = 255;
+    }
+  }
+
+  await sharp(out, { raw: info }).png().toFile(outAbsPath);
 }
+
 
 router.get("/", async (req, res) => {
   try {
