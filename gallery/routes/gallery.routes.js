@@ -27,7 +27,14 @@ const safeCategory = (raw) => {
 
 const safeFilename = (raw) => {
   const f = String(raw || "").trim();
-  if (!f || f.includes("..") || f.includes("/") || f.includes("\\"))
+  if (!f) return null;
+  if (
+    f.includes("..") ||
+    f.includes("/") ||
+    f.includes("\\") ||
+    f.includes("%2f") ||
+    f.includes("%5c")
+  )
     return null;
   return f;
 };
@@ -38,9 +45,8 @@ const ensureDir = (dir) => {
 
 const toUrl = (category, file) => `/sketchesTattoo/${category}/${file}`;
 
-const processedNameFor = (filename) => {
-  const parsed = path.parse(filename);
-  const base = parsed.name.replace(/^processed-/, "");
+const processedNameFor = (originalFilename) => {
+  const base = path.basename(originalFilename, path.extname(originalFilename));
   return `processed-${base}.png`;
 };
 
@@ -50,9 +56,7 @@ async function processSketchToTransparentPng(inputAbsPath, outAbsPath) {
   const { data, info } = await sharp(inputAbsPath)
     .rotate()
     .ensureAlpha()
-    .flatten({ background: "#ffffff" })
-    .grayscale()
-    .threshold(180)
+    .toColourspace("srgb")
     .raw()
     .toBuffer({ resolveWithObject: true });
 
@@ -73,7 +77,11 @@ async function processSketchToTransparentPng(inputAbsPath, outAbsPath) {
     }
   }
 
-  await sharp(out, { raw: info }).png().toFile(outAbsPath);
+  await sharp(out, {
+    raw: { width: info.width, height: info.height, channels: 4 },
+  })
+    .png()
+    .toFile(outAbsPath);
 }
 
 async function ensureProcessed(categoryPath, originalFilename) {
@@ -86,13 +94,12 @@ async function ensureProcessed(categoryPath, originalFilename) {
     return processedFilename;
   } catch {}
 
-  await processSketchToTransparentPng(originalAbs, processedAbs).catch(
-    () => null,
-  );
-
   try {
-    await fsp.unlink(originalAbs);
-  } catch {}
+    await processSketchToTransparentPng(originalAbs, processedAbs);
+    await fsp.unlink(originalAbs).catch(() => {});
+  } catch {
+    return null;
+  }
 
   return processedFilename;
 }
@@ -119,43 +126,16 @@ const readCategoryUrls = async (category) => {
         continue;
       }
 
-      if (!isPng) {
-        const out = await ensureProcessed(categoryPath, file);
-        processed.push(out);
-        continue;
-      }
-
-      const out = await ensureProcessed(categoryPath, file);
-      processed.push(out);
+      const outName = await ensureProcessed(categoryPath, file);
+      if (outName) processed.push(outName);
     }
 
-    const unique = Array.from(new Set(processed)).sort((a, b) =>
-      b.localeCompare(a),
-    );
-    return unique.map((file) => toUrl(category, file));
+    processed.sort((a, b) => b.localeCompare(a));
+    return processed.map((file) => toUrl(category, file));
   } catch {
     return [];
   }
 };
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const category = safeCategory(req.params.category);
-    if (!category) return cb(new Error("Invalid category"));
-    const categoryPath = path.join(baseGalleryPath, category);
-    ensureDir(categoryPath);
-    cb(null, categoryPath);
-  },
-  filename: (req, file, cb) => {
-    const original = String(file.originalname || "image")
-      .replace(/\s+/g, "_")
-      .replace(/[^\w.\-()]/g, "");
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}-${original}`;
-    cb(null, uniqueName);
-  },
-});
-
-const upload = multer({ storage });
 
 router.get("/", async (req, res) => {
   try {
@@ -176,6 +156,26 @@ router.get("/:category", async (req, res) => {
   res.json(urls);
 });
 
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const category = safeCategory(req.params.category);
+    if (!category) return cb(new Error("Invalid category"));
+
+    const categoryPath = path.join(baseGalleryPath, category);
+    ensureDir(categoryPath);
+    cb(null, categoryPath);
+  },
+  filename: (req, file, cb) => {
+    const original = String(file.originalname || "image")
+      .replace(/\s+/g, "_")
+      .replace(/[^\w.\-()]/g, "");
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}-${original}`;
+    cb(null, uniqueName);
+  },
+});
+
+const upload = multer({ storage });
+
 router.post(
   "/:category",
   auth,
@@ -189,9 +189,9 @@ router.post(
       return res.status(400).json({ ok: false, message: "No file uploaded" });
 
     const categoryPath = path.join(baseGalleryPath, category);
-    const originalFilename = req.file.filename;
-    const originalPath = path.join(categoryPath, originalFilename);
-    const processedFilename = processedNameFor(originalFilename);
+    const originalPath = path.join(categoryPath, req.file.filename);
+
+    const processedFilename = processedNameFor(req.file.filename);
     const processedPath = path.join(categoryPath, processedFilename);
 
     try {
@@ -202,7 +202,6 @@ router.post(
         .json({ ok: true, imageUrl: toUrl(category, processedFilename) });
     } catch {
       await fsp.unlink(originalPath).catch(() => {});
-      await fsp.unlink(processedPath).catch(() => {});
       return res
         .status(500)
         .json({ ok: false, message: "Failed to process sketch" });
