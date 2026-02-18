@@ -44,17 +44,28 @@ const readCategoryUrls = async (category) => {
     const files = await fsp.readdir(categoryPath);
     return files
       .filter((f) => f && !f.startsWith("."))
-      .map((file) => toUrl(category, file));
+      .map((file) => toUrl(category, file))
+      .sort((a, b) => (a < b ? 1 : -1));
   } catch {
     return [];
   }
 };
 
+const requireCategory = (req, res, next) => {
+  const category = safeCategory(req.params.category);
+  if (!category)
+    return res.status(400).json({ ok: false, message: "Invalid category" });
+  req.sketchCategory = category;
+  next();
+};
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const category = safeCategory(req.params.category);
-    if (!category) return cb(new Error("Invalid category"));
-
+    const category = req.sketchCategory || safeCategory(req.params.category);
+    if (!category)
+      return cb(
+        Object.assign(new Error("Invalid category"), { statusCode: 400 }),
+      );
     const categoryPath = path.join(baseGalleryPath, category);
     ensureDir(categoryPath);
     cb(null, categoryPath);
@@ -68,10 +79,21 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 12 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^image\/(png|jpeg|jpg|webp)$/i.test(file.mimetype || "");
+    if (!ok)
+      return cb(
+        Object.assign(new Error("Unsupported file type"), { statusCode: 415 }),
+      );
+    cb(null, true);
+  },
+});
 
-async function processSketchToPngBW(inputAbsPath, outAbsPath) {
-  const whiteThr = 245; 
+async function processSketchToTransparentInk(inputAbsPath, outAbsPath) {
+  const whiteThr = 245;
 
   const { data, info } = await sharp(inputAbsPath)
     .ensureAlpha()
@@ -100,19 +122,16 @@ async function processSketchToPngBW(inputAbsPath, outAbsPath) {
   await sharp(out, { raw: info }).png().toFile(outAbsPath);
 }
 
-
 router.get("/", async (req, res) => {
   try {
     const out = {};
-    for (const cat of ALLOWED_CATEGORIES) {
+    for (const cat of ALLOWED_CATEGORIES)
       out[cat] = await readCategoryUrls(cat);
-    }
     res.json(out);
   } catch {
     res.status(500).json({ ok: false, message: "Failed to load sketches" });
   }
 });
-
 
 router.get("/:category", async (req, res) => {
   const category = safeCategory(req.params.category);
@@ -125,22 +144,22 @@ router.post(
   "/:category",
   auth,
   isAdmin,
+  requireCategory,
   upload.single("image"),
   async (req, res) => {
-    const category = safeCategory(req.params.category);
-    if (!category)
-      return res.status(400).json({ ok: false, message: "Invalid category" });
+    const category = req.sketchCategory;
     if (!req.file)
       return res.status(400).json({ ok: false, message: "No file uploaded" });
 
     const categoryPath = path.join(baseGalleryPath, category);
     const originalPath = path.join(categoryPath, req.file.filename);
 
-    const processedFilename = `processed-${req.file.filename.replace(/\.(png|jpg|jpeg|webp)$/i, "")}.png`;
+    const baseName = path.parse(req.file.filename).name;
+    const processedFilename = `processed-${baseName}.png`;
     const processedPath = path.join(categoryPath, processedFilename);
 
     try {
-      await processSketchToPngBW(originalPath, processedPath);
+      await processSketchToTransparentInk(originalPath, processedPath);
       await fsp.unlink(originalPath).catch(() => {});
       return res
         .status(201)
@@ -153,21 +172,6 @@ router.post(
     }
   },
 );
-
-router.post(
-  "/upload/:category",
-  auth,
-  isAdmin,
-  upload.single("image"),
-  async (req, res) => {
-    req.params.category = req.params.category; 
-    return router.handle(
-      { ...req, url: `/${req.params.category}`, method: "POST" },
-      res,
-    );
-  },
-);
-
 
 router.delete("/:category/:filename", auth, isAdmin, async (req, res) => {
   const category = safeCategory(req.params.category);
@@ -188,6 +192,26 @@ router.delete("/:category/:filename", auth, isAdmin, async (req, res) => {
       .status(404)
       .json({ ok: false, message: "File not found or cannot be deleted" });
   }
+});
+
+router.use((err, req, res, next) => {
+  const status = err?.statusCode || err?.status || 500;
+  const message =
+    status === 400
+      ? "Bad request"
+      : status === 401
+        ? "Unauthorized"
+        : status === 403
+          ? "Forbidden"
+          : status === 413
+            ? "File too large"
+            : status === 415
+              ? "Unsupported file type"
+              : "Server error";
+
+  if (status === 500)
+    return res.status(500).json({ ok: false, message: "Server error" });
+  return res.status(status).json({ ok: false, message });
 });
 
 export default router;
