@@ -43,7 +43,13 @@ const readCategoryUrls = async (category) => {
   try {
     const files = await fsp.readdir(categoryPath);
     return files
-      .filter((f) => f && !f.startsWith("."))
+      .filter(
+        (f) =>
+          f &&
+          !f.startsWith(".") &&
+          f.startsWith("processed-") &&
+          f.endsWith(".png"),
+      )
       .map((file) => toUrl(category, file))
       .sort((a, b) => (a < b ? 1 : -1));
   } catch {
@@ -93,37 +99,50 @@ const upload = multer({
 });
 
 async function processSketchToTransparentInk(inputAbsPath, outAbsPath) {
-  const whiteThr = 250;
-  const strength = 1.25;
+  const strength = 1.45; // כמה "דיו" חזק
+  const alphaCutoff = 25; // מוחק ערפל חלש
 
+  // מוודאים שהתמונה מומרת ל-4 ערוצים (RGBA) ולא מאבדת מידע
   const { data, info } = await sharp(inputAbsPath)
     .ensureAlpha()
-    .grayscale()
-    .normalize()
+    .toColorspace("srgb") // במקום grayscale שהרס את הערוצים
     .raw()
     .toBuffer({ resolveWithObject: true });
 
   const out = Buffer.from(data);
 
   for (let i = 0; i < out.length; i += 4) {
-    const v = out[i];
+    const r = out[i];
+    const g = out[i + 1];
+    const b = out[i + 2];
+    const originalAlpha = out[i + 3];
 
-    if (v >= whiteThr) {
-      out[i] = 0;
-      out[i + 1] = 0;
-      out[i + 2] = 0;
-      out[i + 3] = 0;
-      continue;
+    // חישוב בהירות (Grayscale) באופן ידני לכל פיקסל
+    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+    // שחור => ink גבוה, לבן => ink נמוך
+    const ink = 255 - luminance;
+    let a = ink * strength;
+
+    if (a < alphaCutoff) a = 0;
+    if (a > 255) a = 255;
+
+    // במידה ולתמונה כבר הייתה שקיפות (PNG חתוך), נשמור עליה
+    if (originalAlpha < 255) {
+      a = Math.min(a, originalAlpha);
     }
 
-    const a = Math.max(0, Math.min(255, (whiteThr - v) * strength));
-    out[i] = 0;
-    out[i + 1] = 0;
-    out[i + 2] = 0;
-    out[i + 3] = a;
+    // הופכים את הפיקסל לשחור טהור - רק השקיפות קובעת כמה הוא ייראה
+    out[i] = 0; // R
+    out[i + 1] = 0; // G
+    out[i + 2] = 0; // B
+    out[i + 3] = Math.round(a); // Alpha (שקיפות)
   }
 
-  await sharp(out, { raw: info })
+  // שומרים חזרה כקובץ PNG תקין עם 4 ערוצים
+  await sharp(out, {
+    raw: { width: info.width, height: info.height, channels: 4 },
+  })
     .png({ compressionLevel: 9, adaptiveFiltering: true })
     .toFile(outAbsPath);
 }
