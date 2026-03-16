@@ -20,12 +20,13 @@ const login = async (email, password) => {
 
       if (hoursPassed <= 24) {
         throw new Error(
-          "Your account is temporarily locked due to multiple failed login attempts. Please try again after 24 hours."
+          "Your account is temporarily locked due to multiple failed login attempts. Please try again after 24 hours.",
         );
       }
       await lockUser.findByIdAndDelete(userBlock._id);
       userBlock = null;
     }
+
     const isPasswordValid = await comparePassword(password, user.password);
     if (!isPasswordValid) {
       if (!userBlock) {
@@ -42,6 +43,7 @@ const login = async (email, password) => {
       }
       throw new Error("Password is incorrect.");
     }
+
     if (userBlock) {
       await lockUser.findByIdAndDelete(userBlock._id);
     }
@@ -58,14 +60,19 @@ const getUserById = async (userId) => {
     if (!user) {
       throw new Error("User not found");
     }
-    const returnUser = pick(user, ["name", "isAdmin", "phone", "email"]);
+
+    const returnUser = pick(user.toObject(), [
+      "_id",
+      "name",
+      "isAdmin",
+      "phone",
+      "email",
+    ]);
     return returnUser;
   } catch (err) {
     throw new Error(err.message);
   }
 };
-
-
 
 const deleteUser = async (userId) => {
   try {
@@ -79,7 +86,6 @@ const deleteUser = async (userId) => {
   }
 };
 
-
 const addUser = async (userData) => {
   const newUser = new User(userData);
   const usedEmail = await User.findOne({ email: newUser.email });
@@ -91,8 +97,14 @@ const addUser = async (userData) => {
   const hashedPassword = await hashPassword(newUser.password);
   newUser.password = hashedPassword;
 
+  if (typeof newUser.isAdmin !== "boolean") {
+    newUser.isAdmin = false;
+  }
+
   await newUser.save();
+
   const returnUser = pick(newUser.toObject(), [
+    "_id",
     "name",
     "isAdmin",
     "phone",
@@ -101,6 +113,4 @@ const addUser = async (userData) => {
   return returnUser;
 };
 
-
-
-export { getUserById, deleteUser, addUser, login, };
+export { getUserById, deleteUser, addUser, login };

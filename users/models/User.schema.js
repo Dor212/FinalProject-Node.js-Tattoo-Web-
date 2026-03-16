@@ -1,4 +1,3 @@
-
 import { Schema, model } from "mongoose";
 
 const userSchema = new Schema({
@@ -14,6 +13,7 @@ const userSchema = new Schema({
   },
   isAdmin: {
     type: Boolean,
+    default: false,
   },
   phone: {
     type: String,
@@ -31,4 +31,3 @@ const userSchema = new Schema({
 
 const User = model("User", userSchema);
 export default User;
-
