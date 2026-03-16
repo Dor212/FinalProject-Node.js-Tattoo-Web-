@@ -1,22 +1,5 @@
-import fs from "fs/promises";
-import path from "path";
 import Canvas from "../models/Canvas.js";
 import cloudinary from "../../services/cloudinary.service.js";
-
-const uploadsRoot = path.join(process.cwd(), "uploads");
-
-async function safeUnlink(absPath) {
-  try {
-    await fs.unlink(absPath);
-  } catch {
-    return;
-  }
-}
-
-function relToAbs(rel) {
-  const clean = String(rel || "").replace(/^\/+/, "");
-  return path.join(process.cwd(), clean);
-}
 
 function uploadBufferToCloudinary(buffer, folder, publicIdBase) {
   return new Promise((resolve, reject) => {
@@ -45,6 +28,90 @@ function safeNameBase(s) {
     .slice(0, 60);
 }
 
+function parseJsonArray(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function getMainFiles(req) {
+  const many = Array.isArray(req.files?.mainImages) ? req.files.mainImages : [];
+  const single = req.files?.image?.[0] ? [req.files.image[0]] : [];
+  return many.length ? many : single;
+}
+
+async function uploadMainImages(files, tag, base) {
+  const uploaded = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (!file?.buffer) continue;
+
+    const result = await uploadBufferToCloudinary(
+      file.buffer,
+      "omeravivart/canvases",
+      `${tag}-${base}-${i + 1}`,
+    );
+
+    uploaded.push({
+      imageUrl: result.secure_url,
+      imagePublicId: result.public_id,
+    });
+  }
+
+  return uploaded;
+}
+
+async function uploadVariants(
+  rawVariants,
+  variantImageIds,
+  variantFiles,
+  tag,
+  base,
+) {
+  if (!Array.isArray(rawVariants) || !rawVariants.length) return [];
+
+  const fileById = new Map();
+
+  for (let i = 0; i < variantFiles.length; i++) {
+    const id = variantImageIds[i];
+    const file = variantFiles[i];
+    if (typeof id === "string" && file?.buffer) fileById.set(id, file);
+  }
+
+  const cleaned = rawVariants.filter(
+    (v) => v && typeof v.id === "string" && typeof v.color === "string",
+  );
+
+  const out = [];
+
+  for (const variant of cleaned) {
+    const file = fileById.get(variant.id);
+    if (!file?.buffer) continue;
+
+    const vBase = `${tag}-${base}-v-${safeNameBase(variant.id) || Math.round(Math.random() * 1e9)}`;
+    const uploaded = await uploadBufferToCloudinary(
+      file.buffer,
+      "omeravivart/canvases/variants",
+      vBase,
+    );
+
+    out.push({
+      id: variant.id,
+      color: String(variant.color),
+      label: typeof variant.label === "string" ? variant.label : "",
+      imageUrl: uploaded.secure_url,
+      imagePublicId: uploaded.public_id,
+    });
+  }
+
+  return out;
+}
+
 export async function listCanvases(req, res) {
   try {
     const items = await Canvas.find().sort({ createdAt: -1 });
@@ -58,79 +125,40 @@ export async function uploadCanvas(req, res) {
   try {
     const name = String(req.body?.name || "").trim();
     const size = String(req.body?.size || "").trim();
+    const mainFiles = getMainFiles(req);
 
-    const mainFile = req.files?.image?.[0] || null;
-    if (!name || !size || !mainFile?.buffer) {
-      return res.status(400).json({ message: "Missing name/size/image" });
+    if (!name || !size || !mainFiles.length) {
+      return res.status(400).json({ message: "Missing name/size/images" });
     }
 
     const base = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     const tag = safeNameBase(name) || "canvas";
 
-    const mainUpload = await uploadBufferToCloudinary(
-      mainFile.buffer,
-      "omeravivart/canvases",
-      `${tag}-${base}`,
-    );
+    const mainUploads = await uploadMainImages(mainFiles, tag, base);
+    if (!mainUploads.length) {
+      return res.status(400).json({ message: "Missing valid images" });
+    }
 
-    const imageUrl = mainUpload.secure_url;
-    const imagePublicId = mainUpload.public_id;
-
-    let variants = [];
-    const rawVariants = req.body?.variants ? JSON.parse(req.body.variants) : [];
-    const variantImageIds = req.body?.variantImageIds
-      ? JSON.parse(req.body.variantImageIds)
-      : [];
-
+    const rawVariants = parseJsonArray(req.body?.variants);
+    const variantImageIds = parseJsonArray(req.body?.variantImageIds);
     const variantFiles = Array.isArray(req.files?.variantImages)
       ? req.files.variantImages
       : [];
-
-    if (
-      Array.isArray(rawVariants) &&
-      rawVariants.length > 0 &&
-      Array.isArray(variantImageIds)
-    ) {
-      const fileById = new Map();
-      for (let i = 0; i < variantFiles.length; i++) {
-        const id = variantImageIds[i];
-        const f = variantFiles[i];
-        if (typeof id === "string" && f?.buffer) fileById.set(id, f);
-      }
-
-      const cleaned = rawVariants.filter(
-        (v) => v && typeof v.id === "string" && typeof v.color === "string",
-      );
-
-      const out = [];
-      for (const v of cleaned) {
-        const f = fileById.get(v.id);
-        if (!f?.buffer) continue;
-
-        const vBase = `${tag}-${base}-v-${safeNameBase(v.id) || Math.round(Math.random() * 1e9)}`;
-        const uploaded = await uploadBufferToCloudinary(
-          f.buffer,
-          "omeravivart/canvases/variants",
-          vBase,
-        );
-
-        out.push({
-          id: v.id,
-          color: String(v.color),
-          label: typeof v.label === "string" ? v.label : "",
-          imageUrl: uploaded.secure_url,
-          imagePublicId: uploaded.public_id,
-        });
-      }
-
-      variants = out;
-    }
+    const variants = await uploadVariants(
+      rawVariants,
+      variantImageIds,
+      variantFiles,
+      tag,
+      base,
+    );
 
     const created = await Canvas.create({
       name,
       size,
-      imageUrl,
-      imagePublicId,
+      imageUrl: mainUploads[0].imageUrl,
+      imagePublicId: mainUploads[0].imagePublicId,
+      imageUrls: mainUploads.map((item) => item.imageUrl),
+      imagePublicIds: mainUploads.map((item) => item.imagePublicId),
       variants,
     });
 
@@ -140,35 +168,98 @@ export async function uploadCanvas(req, res) {
   }
 }
 
+export async function updateCanvas(req, res) {
+  try {
+    const { id } = req.params;
+    const doc = await Canvas.findById(id);
+    if (!doc) return res.status(404).json({ message: "Canvas not found" });
+
+    const name = String(req.body?.name || "").trim();
+    const size = String(req.body?.size || "").trim();
+
+    if (name) doc.name = name;
+    if (size) doc.size = size;
+
+    const base = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    const tag = safeNameBase(doc.name) || "canvas";
+
+    const existingImageUrls =
+      Array.isArray(doc.imageUrls) && doc.imageUrls.length
+        ? [...doc.imageUrls]
+        : doc.imageUrl
+          ? [doc.imageUrl]
+          : [];
+
+    const existingImagePublicIds =
+      Array.isArray(doc.imagePublicIds) && doc.imagePublicIds.length
+        ? [...doc.imagePublicIds]
+        : doc.imagePublicId
+          ? [doc.imagePublicId]
+          : [];
+
+    const newMainFiles = getMainFiles(req);
+    if (newMainFiles.length) {
+      const uploadedMain = await uploadMainImages(newMainFiles, tag, base);
+      existingImageUrls.push(...uploadedMain.map((item) => item.imageUrl));
+      existingImagePublicIds.push(
+        ...uploadedMain.map((item) => item.imagePublicId),
+      );
+    }
+
+    doc.imageUrls = existingImageUrls;
+    doc.imagePublicIds = existingImagePublicIds;
+
+    if (existingImageUrls.length) doc.imageUrl = existingImageUrls[0];
+    if (existingImagePublicIds.length)
+      doc.imagePublicId = existingImagePublicIds[0];
+
+    const rawVariants = parseJsonArray(req.body?.variants);
+    const variantImageIds = parseJsonArray(req.body?.variantImageIds);
+    const variantFiles = Array.isArray(req.files?.variantImages)
+      ? req.files.variantImages
+      : [];
+    const newVariants = await uploadVariants(
+      rawVariants,
+      variantImageIds,
+      variantFiles,
+      tag,
+      base,
+    );
+
+    if (newVariants.length) {
+      const existingVariants = Array.isArray(doc.variants)
+        ? [...doc.variants]
+        : [];
+      doc.variants = [...existingVariants, ...newVariants];
+    }
+
+    await doc.save();
+    return res.json(doc);
+  } catch {
+    return res.status(500).json({ message: "Failed to update canvas" });
+  }
+}
+
 export async function deleteCanvas(req, res) {
   try {
     const { id } = req.params;
     const doc = await Canvas.findById(id);
     if (!doc) return res.status(404).json({ message: "Canvas not found" });
 
-    const pids = [];
-    if (doc.imagePublicId) pids.push(doc.imagePublicId);
-    for (const v of doc.variants || []) {
-      if (v?.imagePublicId) pids.push(v.imagePublicId);
-    }
+    const publicIds = [
+      ...(Array.isArray(doc.imagePublicIds) ? doc.imagePublicIds : []),
+      doc.imagePublicId || "",
+      ...(Array.isArray(doc.variants)
+        ? doc.variants.map((v) => v?.imagePublicId || "")
+        : []),
+    ].filter(Boolean);
 
-    for (const pid of pids) {
+    for (const pid of publicIds) {
       try {
         await cloudinary.uploader.destroy(pid, { resource_type: "image" });
       } catch {
         continue;
       }
-    }
-
-    const urls = [doc.imageUrl, ...(doc.variants || []).map((v) => v.imageUrl)];
-    for (const url of urls) {
-      const u = String(url || "");
-      const idx = u.indexOf("/uploads/");
-      if (idx === -1) continue;
-
-      const rel = u.slice(idx);
-      const abs = relToAbs(rel);
-      if (abs.startsWith(uploadsRoot)) await safeUnlink(abs);
     }
 
     await Canvas.findByIdAndDelete(id);

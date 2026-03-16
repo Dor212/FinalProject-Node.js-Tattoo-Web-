@@ -17,6 +17,8 @@ const CanvasSchema = new mongoose.Schema(
     size: { type: String, required: true, trim: true },
     imageUrl: { type: String, required: true },
     imagePublicId: { type: String, default: "" },
+    imageUrls: { type: [String], default: [] },
+    imagePublicIds: { type: [String], default: [] },
     variants: { type: [CanvasVariantSchema], default: [] },
   },
   { timestamps: true },

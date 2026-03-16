@@ -99,13 +99,11 @@ const upload = multer({
 });
 
 async function processSketchToTransparentInk(inputAbsPath, outAbsPath) {
-  const strength = 1.45; // כמה "דיו" חזק
-  const alphaCutoff = 25; // מוחק ערפל חלש
-
-  // מוודאים שהתמונה מומרת ל-4 ערוצים (RGBA) ולא מאבדת מידע
+  const strength = 1.45; 
+  const alphaCutoff = 25;
   const { data, info } = await sharp(inputAbsPath)
     .ensureAlpha()
-    .toColorspace("srgb") // במקום grayscale שהרס את הערוצים
+    .toColorspace("srgb") 
     .raw()
     .toBuffer({ resolveWithObject: true });
 
@@ -116,30 +114,21 @@ async function processSketchToTransparentInk(inputAbsPath, outAbsPath) {
     const g = out[i + 1];
     const b = out[i + 2];
     const originalAlpha = out[i + 3];
-
-    // חישוב בהירות (Grayscale) באופן ידני לכל פיקסל
     const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-
-    // שחור => ink גבוה, לבן => ink נמוך
     const ink = 255 - luminance;
     let a = ink * strength;
 
     if (a < alphaCutoff) a = 0;
     if (a > 255) a = 255;
-
-    // במידה ולתמונה כבר הייתה שקיפות (PNG חתוך), נשמור עליה
     if (originalAlpha < 255) {
       a = Math.min(a, originalAlpha);
     }
-
-    // הופכים את הפיקסל לשחור טהור - רק השקיפות קובעת כמה הוא ייראה
-    out[i] = 0; // R
-    out[i + 1] = 0; // G
-    out[i + 2] = 0; // B
-    out[i + 3] = Math.round(a); // Alpha (שקיפות)
+    out[i] = 0; 
+    out[i + 1] = 0;
+    out[i + 2] = 0; 
+    out[i + 3] = Math.round(a);
   }
 
-  // שומרים חזרה כקובץ PNG תקין עם 4 ערוצים
   await sharp(out, {
     raw: { width: info.width, height: info.height, channels: 4 },
   })
