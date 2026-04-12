@@ -2,7 +2,6 @@ import express from "express";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
-import sharp from "sharp";
 import { fileURLToPath } from "url";
 import { promises as fsp } from "fs";
 import { auth } from "../../middlewares/token.js";
@@ -15,8 +14,16 @@ const router = express.Router();
 
 const ALLOWED_CATEGORIES = ["small", "medium", "large"];
 const ALLOWED_SET = new Set(ALLOWED_CATEGORIES);
-
 const baseGalleryPath = path.join(__dirname, "../../public/sketchesTattoo");
+
+let sharpLoader = null;
+
+const getSharp = async () => {
+  if (!sharpLoader) {
+    sharpLoader = import("sharp").then((mod) => mod.default || mod);
+  }
+  return sharpLoader;
+};
 
 const safeCategory = (raw) => {
   const c = String(raw || "")
@@ -27,8 +34,9 @@ const safeCategory = (raw) => {
 
 const safeFilename = (raw) => {
   const f = String(raw || "").trim();
-  if (!f || f.includes("..") || f.includes("/") || f.includes("\\"))
+  if (!f || f.includes("..") || f.includes("/") || f.includes("\\")) {
     return null;
+  }
   return f;
 };
 
@@ -59,8 +67,9 @@ const readCategoryUrls = async (category) => {
 
 const requireCategory = (req, res, next) => {
   const category = safeCategory(req.params.category);
-  if (!category)
+  if (!category) {
     return res.status(400).json({ ok: false, message: "Invalid category" });
+  }
   req.sketchCategory = category;
   next();
 };
@@ -68,10 +77,12 @@ const requireCategory = (req, res, next) => {
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const category = req.sketchCategory || safeCategory(req.params.category);
-    if (!category)
+    if (!category) {
       return cb(
         Object.assign(new Error("Invalid category"), { statusCode: 400 }),
       );
+    }
+
     const categoryPath = path.join(baseGalleryPath, category);
     ensureDir(categoryPath);
     cb(null, categoryPath);
@@ -90,20 +101,23 @@ const upload = multer({
   limits: { fileSize: 12 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ok = /^image\/(png|jpeg|jpg|webp)$/i.test(file.mimetype || "");
-    if (!ok)
+    if (!ok) {
       return cb(
         Object.assign(new Error("Unsupported file type"), { statusCode: 415 }),
       );
+    }
     cb(null, true);
   },
 });
 
 async function processSketchToTransparentInk(inputAbsPath, outAbsPath) {
-  const strength = 1.45; 
+  const sharp = await getSharp();
+  const strength = 1.45;
   const alphaCutoff = 25;
+
   const { data, info } = await sharp(inputAbsPath)
     .ensureAlpha()
-    .toColorspace("srgb") 
+    .toColorspace("srgb")
     .raw()
     .toBuffer({ resolveWithObject: true });
 
@@ -120,12 +134,11 @@ async function processSketchToTransparentInk(inputAbsPath, outAbsPath) {
 
     if (a < alphaCutoff) a = 0;
     if (a > 255) a = 255;
-    if (originalAlpha < 255) {
-      a = Math.min(a, originalAlpha);
-    }
-    out[i] = 0; 
+    if (originalAlpha < 255) a = Math.min(a, originalAlpha);
+
+    out[i] = 0;
     out[i + 1] = 0;
-    out[i + 2] = 0; 
+    out[i + 2] = 0;
     out[i + 3] = Math.round(a);
   }
 
@@ -139,8 +152,9 @@ async function processSketchToTransparentInk(inputAbsPath, outAbsPath) {
 router.get("/", async (req, res) => {
   try {
     const out = {};
-    for (const cat of ALLOWED_CATEGORIES)
+    for (const cat of ALLOWED_CATEGORIES) {
       out[cat] = await readCategoryUrls(cat);
+    }
     res.json(out);
   } catch {
     res.status(500).json({ ok: false, message: "Failed to load sketches" });
@@ -162,12 +176,12 @@ router.post(
   upload.single("image"),
   async (req, res) => {
     const category = req.sketchCategory;
-    if (!req.file)
+    if (!req.file) {
       return res.status(400).json({ ok: false, message: "No file uploaded" });
+    }
 
     const categoryPath = path.join(baseGalleryPath, category);
     const originalPath = path.join(categoryPath, req.file.filename);
-
     const baseName = path.parse(req.file.filename).name;
     const processedFilename = `processed-${baseName}.png`;
     const processedPath = path.join(categoryPath, processedFilename);
@@ -175,14 +189,18 @@ router.post(
     try {
       await processSketchToTransparentInk(originalPath, processedPath);
       await fsp.unlink(originalPath).catch(() => {});
+
       return res
         .status(201)
         .json({ ok: true, imageUrl: toUrl(category, processedFilename) });
-    } catch {
+    } catch (error) {
       await fsp.unlink(originalPath).catch(() => {});
-      return res
-        .status(500)
-        .json({ ok: false, message: "Failed to process sketch" });
+      const message =
+        error?.message?.includes("sharp")
+          ? "Sketch processing is unavailable right now"
+          : "Failed to process sketch";
+
+      return res.status(500).json({ ok: false, message });
     }
   },
 );
@@ -191,10 +209,12 @@ router.delete("/:category/:filename", auth, isAdmin, async (req, res) => {
   const category = safeCategory(req.params.category);
   const filename = safeFilename(req.params.filename);
 
-  if (!category)
+  if (!category) {
     return res.status(400).json({ ok: false, message: "Invalid category" });
-  if (!filename)
+  }
+  if (!filename) {
     return res.status(400).json({ ok: false, message: "Invalid filename" });
+  }
 
   const filePath = path.join(baseGalleryPath, category, filename);
 
@@ -223,8 +243,10 @@ router.use((err, req, res, next) => {
               ? "Unsupported file type"
               : "Server error";
 
-  if (status === 500)
+  if (status === 500) {
     return res.status(500).json({ ok: false, message: "Server error" });
+  }
+
   return res.status(status).json({ ok: false, message });
 });
 
